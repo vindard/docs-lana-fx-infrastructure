@@ -63,7 +63,7 @@ IAS 21 (IFRS) and ASC 830 (US GAAP) govern the translation and reporting of fore
 | Concept | Definition | Lana Context |
 |---------|-----------|--------------|
 | **Transaction currency** | Currency in which a transaction occurs | EUR for a Euro-denominated loan |
-| **Functional currency** | Currency of the entity's primary economic environment | USD (the platform operates in USD) |
+| **Functional currency** | Currency of the entity's primary economic environment | Configurable per instance (e.g., USD, EUR, GBP) |
 | **Presentation currency** | Currency financial statements are presented in | USD |
 
 Under IAS 21:
@@ -282,7 +282,7 @@ The aggregator collects quotes from all healthy sources, applies tolerance band 
 
 ## Component 3: Rate-Per-Transaction Recording
 
-Every cross-currency journal entry must record the rate used. Additionally, **single-currency non-USD transactions** (no exchange involved) should also capture the spot rate at transaction time, even though the rate is not an input to the entry amounts.
+Every cross-currency journal entry must record the rate used. Additionally, **single-currency non-functional-currency transactions** (no exchange involved) should also capture the spot rate at transaction time, even though the rate is not an input to the entry amounts.
 
 The reason differs by currency type but the conclusion is the same:
 - **Fiat foreign currency:** IAS 21 requires initial recognition at the transaction-date spot rate. This becomes the **historical rate** — the baseline for all future revaluation deltas. Without it, the first revaluation has no reference point.
@@ -474,9 +474,15 @@ No separate realized gain/loss entry is needed because the carrying value alread
 
 ### Scoping Note
 
-Trading accounts deliver maximum value when the system handles **3 or more fiat currencies**. With only USD as the functional currency, there are no fiat FX conversions to route through a trading account.
+**BTC:** Always uses direct fair value booking (ASU 2023-08), regardless of how many currencies the platform supports or which functional currency is configured. BTC never flows through the trading account.
 
-**Recommendation:** BTC always uses direct fair value booking (ASU 2023-08), regardless of how many currencies the platform supports. The fiat FX trading account should be introduced when a second fiat currency (e.g., EUR) is added, at which point cross-rate triangulation and multi-leg conversions make the intermediary account essential. With 3+ fiat currencies, the trading account becomes near-mandatory for tractable accounting.
+**Fiat FX trading account:** The system is designed to support configurable functional currencies per instance. This means the trading account is a **core infrastructure component, not a deferred optimization**:
+
+- An instance configured with EUR as functional currency treats USD as a foreign currency from day one. Any USD-denominated transaction immediately requires fiat FX infrastructure.
+- An instance configured with JPY as functional currency dealing with BTC collateral valued in USD creates a three-currency situation (BTC → USD → JPY) where cross-rate triangulation is needed from the start.
+- Since the functional currency cannot be predicted at build time, the system cannot assume any particular currency is "home" and defer FX machinery.
+
+**Recommendation:** Build the fiat FX trading account into the core design. All fiat FX operations, revaluation jobs, and chart of accounts must reference a configured `functional_currency` parameter rather than hardcoding USD. The trading account is essential infrastructure for any instance where the configured functional currency differs from any transaction currency — which is the expected deployment scenario.
 
 ### Rate Locking and Spread Considerations
 
@@ -498,7 +504,7 @@ Period-end revaluation follows two distinct regimes reflecting the accounting fr
 DAILY or MONTHLY (configurable per account type):
 
 1. IDENTIFY candidates (fiat foreign currency ONLY — exclude BTC accounts)
-   - All accounts with non-USD fiat currency balances (EUR, GBP, etc.)
+   - All accounts with fiat currency balances other than the functional currency
    - All open foreign-currency receivables/payables
    - All foreign-currency cash/bank accounts
    - NOTE: BTC accounts are excluded — they follow ASU 2023-08 (Component 5b)
@@ -510,7 +516,7 @@ DAILY or MONTHLY (configurable per account type):
 3. CALCULATE adjustments
    For each (account, currency):
      foreign_balance = sum of entries in foreign currency
-     current_book_value = current balance in functional currency (USD)
+     current_book_value = current balance in functional currency
      new_value = foreign_balance × closing_rate
      adjustment = new_value - current_book_value
 
@@ -803,7 +809,7 @@ Dr  Collateral Obligation       $16,000   (decrease in liability)
 
 Both sides move together — no P&L entry. New LTV = 80,000 / 84,000 = 95.2%.
 
-Note: The BTC quantity stays at 2.00000000 BTC. Only the USD valuation changes. This is a USD-denominated revaluation entry, not a BTC entry.
+Note: The BTC quantity stays at 2.00000000 BTC. Only the functional-currency valuation changes. This is a functional-currency-denominated revaluation entry, not a BTC entry.
 
 **C. Liquidation (LTV Breach)**
 
@@ -868,14 +874,14 @@ entries: [
     Entry {
         account: "params.collateral_account_id",
         units: "params.adjustment_amount",
-        currency: "'USD'",
+        currency: "params.functional_currency",
         direction: if adjustment > 0 { DEBIT } else { CREDIT },
         layer: SETTLED,
     },
     Entry {
         account: "params.obligation_account_id",
         units: "decimal.Abs(params.adjustment_amount)",
-        currency: "'USD'",
+        currency: "params.functional_currency",
         direction: if adjustment > 0 { CREDIT } else { DEBIT },
         layer: SETTLED,
     },
@@ -1204,7 +1210,7 @@ This means the system must be able to:
 
 ### Hyperinflation (IAS 29)
 
-If the platform operates in or has exposure to hyperinflationary jurisdictions, IAS 29 requires financial statements to be restated for the effects of inflation **before** translation under IAS 21. This is noted as a future consideration — not currently applicable for a USD-functional-currency platform, but relevant if expanding to certain emerging markets.
+If the platform operates in or has exposure to hyperinflationary jurisdictions, IAS 29 requires financial statements to be restated for the effects of inflation **before** translation under IAS 21. For instances configured with a stable functional currency (USD, EUR, GBP), this is not immediately applicable. However, since the functional currency is configurable, instances deployed in or with exposure to hyperinflationary jurisdictions must account for this. The revaluation infrastructure should be designed to accommodate IAS 29 restatement as a pre-processing step before IAS 21 translation.
 
 ### Segregation and Proof of Reserves
 
@@ -1215,13 +1221,15 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 
 ## Implementation Order
 
+Since the system supports configurable functional currencies, fiat FX infrastructure (including the trading account) is core — not deferred. The phasing below reflects build dependencies, not "when it becomes needed."
+
 ### Phase 1: Rate Storage + Multi-Source Aggregation (Foundation)
 - Create `exchange_rates` table and migration
-- Build `ExchangeRateService` with rate lookup (direct, inverse, cross-rate)
+- Build `ExchangeRateService` with rate lookup (direct, inverse, cross-rate), parameterized by configurable `functional_currency`
 - Implement rate source adapter trait and Bitfinex adapter (wrapping existing feed)
 - Add Coinbase and Kraken adapters
 - Build aggregator (median) with tolerance band filtering
-- Store rate used on each cross-currency and single-currency non-USD transaction (metadata)
+- Store rate used on each cross-currency and single-currency non-functional-currency transaction (metadata)
 
 ### Phase 2: Rate Robustness
 - Implement rate staleness enforcement
@@ -1229,34 +1237,30 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 - Build circuit breaker logic
 - Deploy rate health monitoring job
 
-### Phase 3: Collateral Revaluation
+### Phase 3: Fiat FX Chart of Accounts + Trading Account
+- Add fiat FX-specific accounts (trading account, realized/unrealized gain/loss, rounding differences), parameterized by `functional_currency`
+- Create fiat FX trading account template for fiat-to-fiat conversions
+- Route all fiat FX conversions through trading account
+- Realized gain/loss posting on position closure
+- Build fiat FX revaluation (delta method) for foreign-currency balances
+- Build reconciliation job for revaluation verification
+
+### Phase 4: Collateral Revaluation
 - Build collateral revaluation template (both-sides, no P&L)
 - Create `CollateralRevaluationEndOfDayHandler` + collector + worker jobs triggered by `CoreTimeEvent::EndOfDay`
-- Post USD-denominated adjustment entries
+- Post functional-currency-denominated adjustment entries
 - Delivers immediate value for LTV monitoring accuracy
 
-### Phase 4: Segregation Controls + On-Chain Reconciliation
+### Phase 5: Segregation Controls + On-Chain Reconciliation
 - Implement CALA template restrictions on collateral accounts
 - Build on-chain/ledger reconciliation job
 - Add proof-of-reserves attestation entries
 - Cost basis / lot tracking for collateral liquidation
 
-### Phase 5: BTC Fair Value Revaluation (Platform-Owned BTC)
+### Phase 6: BTC Fair Value Revaluation (Platform-Owned BTC)
 - Add BTC Fair Value Gain/Loss accounts (7100/7200)
 - Build BTC fair value revaluation job chain (separate from fiat FX)
 - Needed as soon as the platform owns any BTC (treasury, fee income)
-
-### Phase 6: Fiat FX Chart of Accounts + Revaluation
-- Add fiat FX-specific accounts (realized gain/loss, unrealized gain/loss, rounding differences)
-- Build fiat FX revaluation (delta method) for foreign-currency balances
-- Build reconciliation job for revaluation verification
-- Needed when a second fiat currency is introduced
-
-### Phase 7: Fiat FX Trading Accounts
-- Create trading account template for fiat-to-fiat conversions only
-- Route all fiat FX conversions through trading account
-- Realized gain/loss posting on position closure
-- Needed when 3+ fiat currencies create cross-rate complexity
 
 ## Dependencies
 
