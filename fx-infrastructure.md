@@ -330,47 +330,125 @@ Without reversal, the Mar 15 entry would only show the gain since Feb 28, missin
 
 ### Implementation in Lana
 
-This would be a **Dagster job** (`core/price/` or a new `core/fx/` module):
+This follows the established job pattern: `EndOfDay event → Handler → Collector → Worker`.
+
+**Event Handler** — registered in module `init()`, listens for `CoreTimeEvent::EndOfDay`:
 
 ```rust
-// Pseudocode for the revaluation job
-async fn run_fx_revaluation(
-    &self,
-    revaluation_date: NaiveDate,
-    rate_service: &ExchangeRateService,
-    accounting: &AccountingService,
-) -> Result<RevaluationReport, FxError> {
-    let closing_rates = rate_service
-        .get_closing_rates(revaluation_date)
-        .await?;
+// core/fx/src/jobs/end_of_day.rs (or core/credit/src/.../jobs/)
+const JOB_TYPE: JobType = JobType::new("task.collect-accounts-for-fx-revaluation");
 
-    let foreign_accounts = accounting
-        .find_accounts_with_foreign_currency_balances()
-        .await?;
+pub struct FxRevaluationEndOfDayHandler {
+    spawner: JobSpawner<CollectAccountsForRevaluationConfig>,
+}
 
-    let mut entries = Vec::new();
+impl<E> OutboxEventHandler<E> for FxRevaluationEndOfDayHandler
+where
+    E: OutboxEventMarker<CoreTimeEvent>,
+{
+    async fn handle_persistent(
+        &self,
+        op: &mut DbOp<'_>,
+        event: &PersistentOutboxEvent<E>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if let Some(CoreTimeEvent::EndOfDay { day, .. }) = event.as_event() {
+            event.inject_trace_parent();
+            let config = CollectAccountsForRevaluationConfig { day: *day };
+            self.spawner
+                .spawn_in_op(op, JobId::new(), config)
+                .await?;
+        }
+        Ok(())
+    }
+}
+```
 
-    for (account, currency, foreign_balance) in foreign_accounts {
-        let rate = closing_rates.get(currency, self.functional_currency)?;
-        let new_value = foreign_balance * rate;
-        let current_book_value = accounting
-            .get_functional_currency_balance(account)
+**Collector Job** — cursor-based pagination over accounts with foreign-currency balances:
+
+```rust
+// core/fx/src/jobs/collect_accounts_for_revaluation.rs
+const PAGE_SIZE: i64 = 100;
+
+#[derive(Serialize, Deserialize)]
+struct CollectorState {
+    last_cursor: Option<(DateTime<Utc>, AccountId)>,
+}
+
+impl JobRunner for CollectAccountsForRevaluationJobRunner {
+    async fn run(&self, current_job: CurrentJob) -> Result<JobCompletion, Error> {
+        let config = current_job.config::<CollectAccountsForRevaluationConfig>()?;
+        let mut state = current_job
+            .execution_state::<CollectorState>()?
+            .unwrap_or_default();
+
+        let closing_rates = self.rate_service
+            .get_closing_rates(config.day)
             .await?;
+
+        let mut op = self.pool.begin().await?;
+        let accounts = self.repo
+            .list_foreign_currency_accounts_in_op(
+                &mut op,
+                state.last_cursor,
+                PAGE_SIZE,
+            )
+            .await?;
+
+        if accounts.is_empty() {
+            return Ok(JobCompletion::Complete);
+        }
+
+        let specs: Vec<_> = accounts.iter().map(|(id, currency, ts)| {
+            let config = ProcessRevaluationConfig {
+                account_id: *id,
+                currency: *currency,
+                day: config.day,
+                closing_rate: closing_rates.get(*currency),
+            };
+            JobSpec::new(JobId::new(), config)
+                .queue_id(id.to_string())
+        }).collect();
+
+        self.worker_spawner.spawn_all_in_op(&mut op, specs).await?;
+
+        state.last_cursor = accounts.last().map(|(id, _, ts)| (*ts, *id));
+        current_job.update_execution_state(&state).await?;
+        op.commit().await?;
+
+        Ok(JobCompletion::RescheduleAt(Utc::now()))  // Continue pagination
+    }
+}
+```
+
+**Worker Job** — per-account revaluation entry posting:
+
+```rust
+// core/fx/src/jobs/process_revaluation.rs
+impl JobRunner for ProcessRevaluationJobRunner {
+    async fn run(&self, current_job: CurrentJob) -> Result<JobCompletion, Error> {
+        let config = current_job.config::<ProcessRevaluationConfig>()?;
+
+        let foreign_balance = self.accounting
+            .get_balance(config.account_id, config.currency)
+            .await?;
+        let current_book_value = self.accounting
+            .get_functional_currency_balance(config.account_id)
+            .await?;
+        let new_value = foreign_balance * config.closing_rate;
         let adjustment = new_value - current_book_value;
 
         if !adjustment.is_zero() {
-            entries.push(RevaluationEntry {
-                account,
-                currency,
+            self.accounting.post_revaluation_entry(
+                config.account_id,
                 adjustment,
-                rate_used: rate,
-                auto_reverse_date: first_day_of_next_period(revaluation_date),
-            });
+                config.closing_rate,
+                config.day,
+                /* auto_reverse_date */ first_day_of_next_period(config.day),
+            ).await?;
         }
-    }
 
-    let report = self.post_revaluation_entries(entries).await?;
-    Ok(report)
+        Ok(JobCompletion::Complete)
+    }
 }
 ```
 
@@ -490,87 +568,167 @@ entries: [
 ]
 ```
 
-## Component 6: Revaluation Batch Job (Dagster)
+## Component 6: Job Orchestration
 
-### Job Design
+All FX operations use the established Rust job framework (`obix` crate), not Dagster. Dagster is reserved for reporting/data warehouse pipelines.
 
-```python
-# dagster/lana/assets/fx_revaluation.py
+### Daily Revaluation Flow
 
-@asset(
-    partitions_def=DailyPartitionsDefinition(start_date="2025-01-01"),
-    automation_condition=AutomationCondition.on_cron("0 0 * * *"),  # midnight daily
-)
-def fx_revaluation(context, lana_client: LanaClient):
-    """
-    Daily FX revaluation:
-    1. Fetch closing rates for all active currency pairs
-    2. Revalue all foreign-currency monetary balances
-    3. Post adjustment entries (auto-reversing)
-    4. Revalue BTC collateral (non-reversing, both sides)
-    5. Check LTV thresholds and trigger margin calls
-    """
-    reval_date = context.partition_key
+Triggered by the existing `CoreTimeEvent::EndOfDay` event, following the same handler → collector → worker pattern used by interest accrual and obligation processing:
 
-    # Step 1: Closing rates
-    closing_rates = lana_client.get_closing_rates(reval_date)
+```
+CoreTimeEvent::EndOfDay { day }
+  ├── FxRevaluationEndOfDayHandler
+  │     └── CollectAccountsForRevaluationJob (cursor-paginated)
+  │           └── ProcessRevaluationJob (per account, posts entries)
+  │
+  └── CollateralRevaluationEndOfDayHandler
+        └── CollectFacilitiesForCollateralRevaluationJob (cursor-paginated)
+              └── ProcessCollateralRevaluationJob (per facility, both-sides entry)
+```
 
-    # Step 2: General FX revaluation (with auto-reversal)
-    general_report = lana_client.revalue_foreign_currency_accounts(
-        date=reval_date,
-        rates=closing_rates,
-        auto_reverse=True,
-    )
+**Registration** — in the FX module's `init()`, called from `LanaApp::init()`:
 
-    # Step 3: Collateral revaluation (no reversal, both sides move)
-    collateral_report = lana_client.revalue_btc_collateral(
-        date=reval_date,
-        btc_usd_rate=closing_rates["BTC/USD"],
-    )
+```rust
+// Registration follows the same pattern as credit facility jobs
+outbox.register_event_handler(
+    jobs,
+    OutboxEventJobConfig::new(JOB_TYPE_COLLECT_FX_REVALUATION),
+    FxRevaluationEndOfDayHandler::new(collector_spawner),
+).await?;
 
-    # Step 4: LTV check
-    margin_calls = lana_client.check_ltv_thresholds(
-        date=reval_date,
-    )
+outbox.register_event_handler(
+    jobs,
+    OutboxEventJobConfig::new(JOB_TYPE_COLLECT_COLLATERAL_REVALUATION),
+    CollateralRevaluationEndOfDayHandler::new(collector_spawner),
+).await?;
+```
 
-    context.log.info(
-        f"Revaluation complete: {general_report.adjustments_count} FX adjustments, "
-        f"{collateral_report.facilities_revalued} collateral updates, "
-        f"{len(margin_calls)} margin calls triggered"
-    )
+**Collateral revaluation collector** — same cursor-based pattern:
 
-    return {
-        "general_adjustments": general_report.total_adjustment,
-        "collateral_revaluations": collateral_report.facilities_revalued,
-        "margin_calls_triggered": len(margin_calls),
+```rust
+// core/credit/collateral/src/jobs/collect_facilities_for_revaluation.rs
+impl JobRunner for CollectFacilitiesForCollateralRevaluationJobRunner {
+    async fn run(&self, current_job: CurrentJob) -> Result<JobCompletion, Error> {
+        let config = current_job.config::<CollateralRevalConfig>()?;
+        let mut state = current_job
+            .execution_state::<CollectorState>()?
+            .unwrap_or_default();
+
+        let mut op = self.pool.begin().await?;
+        let facilities = self.repo
+            .list_active_facilities_with_collateral_in_op(
+                &mut op,
+                state.last_cursor,
+                PAGE_SIZE,
+            )
+            .await?;
+
+        if facilities.is_empty() {
+            return Ok(JobCompletion::Complete);
+        }
+
+        let btc_usd_rate = self.rate_service
+            .get_closing_rate(CurrencyCode::BTC, CurrencyCode::USD, config.day)
+            .await?;
+
+        let specs: Vec<_> = facilities.iter().map(|(id, ts)| {
+            let config = ProcessCollateralRevalConfig {
+                facility_id: *id,
+                day: config.day,
+                btc_usd_rate,
+            };
+            JobSpec::new(JobId::new(), config)
+                .queue_id(id.to_string())
+        }).collect();
+
+        self.worker_spawner.spawn_all_in_op(&mut op, specs).await?;
+
+        state.last_cursor = facilities.last().map(|(id, ts)| (*ts, *id));
+        current_job.update_execution_state(&state).await?;
+        op.commit().await?;
+
+        Ok(JobCompletion::RescheduleAt(Utc::now()))
     }
+}
 ```
 
 ### LTV Monitoring (Higher Frequency)
 
-Separate from the daily accounting revaluation, LTV monitoring should run more frequently:
+Separate from the daily accounting revaluation, LTV monitoring should run at higher frequency. Two options based on existing patterns:
 
-```python
-@sensor(minimum_interval_seconds=900)  # every 15 minutes
-def ltv_monitor(context, lana_client: LanaClient, price_feed: PriceFeed):
-    """
-    High-frequency LTV monitoring.
-    Does NOT post accounting entries — only triggers alerts/margin calls.
-    """
-    current_btc_price = price_feed.get_spot("BTC", "USD")
+**Option A: Triggered by price updates** — react to `CorePriceEvent::PriceUpdated` (published every 60s by the Bitfinex price fetcher):
 
-    at_risk_facilities = lana_client.get_facilities_above_ltv_threshold(
-        btc_price=current_btc_price,
-        warning_threshold=0.85,
-        margin_call_threshold=0.95,
-    )
+```rust
+// Reacts to every price update, checks LTV thresholds
+pub struct LtvMonitorPriceHandler {
+    spawner: JobSpawner<LtvCheckConfig>,
+}
 
-    for facility in at_risk_facilities:
-        if facility.ltv >= 0.95:
-            lana_client.trigger_margin_call(facility.id)
-        elif facility.ltv >= 0.85:
-            lana_client.send_ltv_warning(facility.id)
+impl<E> OutboxEventHandler<E> for LtvMonitorPriceHandler
+where
+    E: OutboxEventMarker<CorePriceEvent>,
+{
+    async fn handle_persistent(
+        &self,
+        op: &mut DbOp<'_>,
+        event: &PersistentOutboxEvent<E>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if let Some(CorePriceEvent::PriceUpdated { price, .. }) = event.as_event() {
+            event.inject_trace_parent();
+            let config = LtvCheckConfig { btc_price: *price };
+            self.spawner
+                .spawn_in_op(op, JobId::new(), config)
+                .await?;
+        }
+        Ok(())
+    }
+}
 ```
+
+This follows the collector → worker pattern: the collector paginates over active facilities, the worker checks each facility's LTV and triggers margin calls if thresholds are breached.
+
+**Option B: Continuous loop job** — like the Bitfinex price fetcher, runs indefinitely with an internal sleep interval:
+
+```rust
+// Runs continuously, polls every N seconds
+const LTV_CHECK_INTERVAL: Duration = Duration::from_secs(900); // 15 minutes
+
+impl JobRunner for LtvMonitorJobRunner {
+    async fn run(&self, current_job: CurrentJob) -> Result<JobCompletion, Error> {
+        loop {
+            let current_price = self.price_service.get_current_btc_price().await?;
+
+            let at_risk = self.credit_facilities
+                .list_facilities_above_ltv_threshold(
+                    current_price,
+                    self.warning_threshold,
+                )
+                .await?;
+
+            for facility in at_risk {
+                if facility.ltv >= self.margin_call_threshold {
+                    self.credit_facilities
+                        .trigger_margin_call(facility.id)
+                        .await?;
+                } else {
+                    self.notifications
+                        .send_ltv_warning(facility.id, facility.ltv)
+                        .await?;
+                }
+            }
+
+            tokio::select! {
+                _ = tokio::time::sleep(LTV_CHECK_INTERVAL) => {},
+                _ = current_job.signal_shutdown() => break,
+            }
+        }
+        Ok(JobCompletion::Complete)
+    }
+}
+```
+
+**Option A is preferred** because it naturally throttles to the rate of price updates and follows the event-driven pattern used throughout the system. Option B is appropriate if LTV checks need to be decoupled from the price feed cadence.
 
 ## Implementation Order
 
@@ -587,14 +745,14 @@ def ltv_monitor(context, lana_client: LanaClient, price_feed: PriceFeed):
 
 ### Phase 3: Revaluation (Collateral First)
 - Build collateral revaluation template (both-sides, no reversal)
-- Create daily Dagster job for collateral mark-to-market
+- Create `CollateralRevaluationEndOfDayHandler` + collector + worker jobs triggered by `CoreTimeEvent::EndOfDay`
 - Post USD-denominated adjustment entries
 - This delivers immediate value for LTV monitoring accuracy
 
 ### Phase 4: General FX Revaluation
 - Build general revaluation template (single-side, with auto-reversal)
-- Extend Dagster job for all foreign-currency balances
-- Implement auto-reversal mechanism
+- Create `FxRevaluationEndOfDayHandler` + collector + worker jobs triggered by `CoreTimeEvent::EndOfDay`
+- Implement auto-reversal mechanism (reversal entries posted by worker with future effective date)
 - Build revaluation report
 
 ### Phase 5: Trading Accounts
@@ -606,5 +764,6 @@ def ltv_monitor(context, lana_client: LanaClient, price_feed: PriceFeed):
 
 - **Workstream 1 (Generic Money Type)**: Not a hard dependency — FX infrastructure can work with the current `UsdCents`/`Satoshis` types for BTC/USD. But supporting additional currency pairs requires the generic type.
 - **CALA**: Transaction metadata support for storing rates. Template parameterization for currency (already supported but not used).
-- **Dagster**: Job scheduling infrastructure already exists. New jobs follow existing patterns.
-- **Price feeds**: Current Bitfinex integration needs to be extended to write closing rates to the rate table.
+- **Jobs framework** (`obix`): Already in place. FX jobs follow the established handler → collector → worker pattern used by interest accrual and obligation processing.
+- **Time events**: `CoreTimeEvent::EndOfDay` already exists and triggers daily operations. FX revaluation hooks into the same event.
+- **Price feeds**: Current Bitfinex integration needs to be extended to write closing rates to the rate table. `CorePriceEvent::PriceUpdated` can trigger high-frequency LTV monitoring.
