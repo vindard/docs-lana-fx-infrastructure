@@ -282,7 +282,16 @@ The aggregator collects quotes from all healthy sources, applies tolerance band 
 
 ## Component 3: Rate-Per-Transaction Recording
 
-Every cross-currency journal entry must record the rate used. Two approaches:
+Every cross-currency journal entry must record the rate used. Additionally, **single-currency foreign transactions** (no exchange involved) should also capture the spot rate at transaction time, even though the rate is not an input to the entry amounts.
+
+The reason: IAS 21 requires initial recognition of foreign-currency items at the transaction-date spot rate. This rate becomes the **historical rate** — the baseline for computing all future revaluation deltas. Without it, the first revaluation has no reference point. While the rate could theoretically be reverse-looked-up from the `exchange_rates` table by timestamp, storing it on the transaction is more reliable (eliminates ambiguity about which rate/source applied) and gives auditors a self-contained record of the USD-equivalent value at origination.
+
+| Transaction Type | Rate Role | Why Record |
+|-----------------|-----------|------------|
+| Cross-currency (exchange) | **Input** — determines amounts on both legs | Required: the rate produced the entry amounts |
+| Single-currency foreign | **Metadata** — records functional-currency equivalent | Required: establishes historical rate for revaluation baseline and audit trail |
+
+Two approaches for recording:
 
 ### Approach A: Rate as Template Parameter
 
