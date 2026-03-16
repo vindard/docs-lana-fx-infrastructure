@@ -85,7 +85,7 @@ Key implications for Lana's FX infrastructure:
 | Classification | Foreign currency | Intangible asset at fair value |
 | Measurement | Spot/closing rate translation | Fair value through net income |
 | Gain/loss recognition | Unrealized → OCI or P&L; realized on settlement | All fair value changes → P&L (no unrealized/realized distinction) |
-| Period-end treatment | Revalue + auto-reverse | Cumulative fair value adjustment (no reversal) |
+| Period-end treatment | Revalue (delta or reversal method) | Cumulative fair value adjustment (no reversal) |
 | Closest analogy | — | Trading securities under ASC 320 |
 
 **The agent/custody exception:** When the platform holds BTC as agent (collateral on behalf of borrowers), both the asset (collateral held) and liability (obligation to return) move together with fair value changes. There is no P&L impact because the platform does not own the BTC. ASU 2023-08's P&L recognition applies only to BTC the platform **owns** (e.g., BTC received as fee income, BTC held in treasury).
@@ -119,7 +119,7 @@ CREATE INDEX idx_exchange_rates_lookup
 | `SPOT` | Transaction recording | Real-time / on-demand |
 | `CLOSING` | Period-end revaluation of monetary items | Daily (end of business) |
 
-> **Note on AVERAGE rate type:** An `AVERAGE` rate type (monthly weighted average) is used in multi-entity consolidation scenarios where subsidiaries have different functional currencies (IAS 21.40). For a single-entity USD platform, this is not needed. It should be introduced if/when Lana requires consolidated financial statements across entities with different functional currencies.
+> **Note on AVERAGE rate type:** An `AVERAGE` rate type (monthly weighted average) is used in multi-entity consolidation scenarios where subsidiaries have different functional currencies (IAS 21.40). For a single-entity platform, this is not needed. It should be introduced if/when Lana requires consolidated financial statements across entities with different functional currencies.
 
 ### Rate Lookup Strategy
 
@@ -288,13 +288,13 @@ The reason differs by currency type but the conclusion is the same:
 - **Fiat foreign currency:** IAS 21 requires initial recognition at the transaction-date spot rate. This becomes the **historical rate** — the baseline for all future revaluation deltas. Without it, the first revaluation has no reference point.
 - **BTC:** ASU 2023-08 requires fair value measurement. The rate at acquisition establishes the initial carrying value and cost basis for any future disposition.
 
-In both cases, while the rate could theoretically be reverse-looked-up from the `exchange_rates` table by timestamp, storing it on the transaction is more reliable (eliminates ambiguity about which rate/source applied) and gives auditors a self-contained record of the USD-equivalent value at origination.
+In both cases, while the rate could theoretically be reverse-looked-up from the `exchange_rates` table by timestamp, storing it on the transaction is more reliable (eliminates ambiguity about which rate/source applied) and gives auditors a self-contained record of the functional-currency-equivalent value at origination.
 
 | Transaction Type | Rate Role | Why Record |
 |-----------------|-----------|------------|
 | Cross-currency (exchange) | **Input** — determines amounts on both legs | Required: the rate produced the entry amounts |
 | Single-currency fiat foreign | **Metadata** — records functional-currency equivalent | Required: establishes IAS 21 historical rate for revaluation baseline |
-| Single-currency BTC | **Metadata** — records USD fair value at acquisition | Required: establishes ASU 2023-08 initial carrying value and cost basis |
+| Single-currency BTC | **Metadata** — records functional-currency fair value at acquisition | Required: establishes ASU 2023-08 initial carrying value and cost basis |
 
 Two approaches for recording:
 
@@ -649,7 +649,7 @@ struct CollectorState {
     last_cursor: Option<(DateTime<Utc>, AccountId)>,
 }
 
-impl JobRunner for CollectAccountsForRevaluationJobRunner {
+impl JobRunner for CollectFiatAccountsForRevaluationJobRunner {
     async fn run(&self, current_job: CurrentJob) -> Result<JobCompletion, Error> {
         let config = current_job.config::<CollectAccountsForRevaluationConfig>()?;
         let mut state = current_job
@@ -753,7 +753,7 @@ impl JobRunner for ProcessBtcFairValueRevaluationJobRunner {
         let current_carrying_value = self.accounting
             .get_functional_currency_balance(config.account_id)
             .await?;
-        let new_fair_value = btc_balance * config.btc_usd_rate;
+        let new_fair_value = btc_balance * config.btc_rate;
         let adjustment = new_fair_value - current_carrying_value;
 
         if !adjustment.is_zero() {
@@ -762,7 +762,7 @@ impl JobRunner for ProcessBtcFairValueRevaluationJobRunner {
             self.accounting.post_btc_fair_value_entry(
                 config.account_id,
                 adjustment,
-                config.btc_usd_rate,
+                config.btc_rate,
                 config.day,
             ).await?;
         }
@@ -861,7 +861,7 @@ Both accounts zero out. No gain/loss for the platform.
 
 ```rust
 // Template: collateral_revalue
-// Posts a USD-only entry adjusting both sides
+// Posts a functional-currency-only entry adjusting both sides
 params: [
     { name: "collateral_account_id", type: UUID },
     { name: "obligation_account_id", type: UUID },
@@ -892,7 +892,7 @@ entries: [
 
 When BTC collateral is liquidated, cost basis is needed for tax reporting regardless of the agent relationship. The lending model provides a natural lot identification strategy:
 
-- **Per-facility cost basis:** Each facility's collateral has a known deposit price (the BTC/USD rate at the time of collateral receipt). This is the most natural approach since collateral is segregated per facility.
+- **Per-facility cost basis:** Each facility's collateral has a known deposit price (the BTC rate in the functional currency at the time of collateral receipt). This is the most natural approach since collateral is segregated per facility.
 - **Specific identification:** Since each collateral deposit is tracked individually (facility ID + deposit timestamp + amount), specific identification is straightforward — no need for FIFO/LIFO assumptions.
 - **Multiple deposits per facility:** If a borrower tops up collateral across multiple deposits at different prices, each deposit is a separate lot within the facility. Liquidation should specify which lots are being sold (typically oldest first, matching FIFO, but configurable).
 
@@ -901,7 +901,7 @@ struct CollateralLot {
     facility_id: FacilityId,
     deposit_timestamp: DateTime<Utc>,
     btc_amount: Satoshis,
-    cost_basis_usd: UsdCents,  // BTC/USD rate at deposit time × amount
+    cost_basis: FunctionalCurrencyAmount,  // BTC rate × amount in functional currency at deposit time
     rate_at_deposit: Decimal,
 }
 ```
@@ -1045,15 +1045,15 @@ impl JobRunner for CollectFacilitiesForCollateralRevaluationJobRunner {
             return Ok(JobCompletion::Complete);
         }
 
-        let btc_usd_rate = self.rate_service
-            .get_closing_rate(CurrencyCode::BTC, CurrencyCode::USD, config.day)
+        let btc_rate = self.rate_service
+            .get_closing_rate(CurrencyCode::BTC, self.functional_currency, config.day)
             .await?;
 
         let specs: Vec<_> = facilities.iter().map(|(id, ts)| {
             let config = ProcessCollateralRevalConfig {
                 facility_id: *id,
                 day: config.day,
-                btc_usd_rate,
+                btc_rate,
             };
             JobSpec::new(JobId::new(), config)
                 .queue_id(id.to_string())
