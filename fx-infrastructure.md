@@ -282,14 +282,19 @@ The aggregator collects quotes from all healthy sources, applies tolerance band 
 
 ## Component 3: Rate-Per-Transaction Recording
 
-Every cross-currency journal entry must record the rate used. Additionally, **single-currency foreign transactions** (no exchange involved) should also capture the spot rate at transaction time, even though the rate is not an input to the entry amounts.
+Every cross-currency journal entry must record the rate used. Additionally, **single-currency non-USD transactions** (no exchange involved) should also capture the spot rate at transaction time, even though the rate is not an input to the entry amounts.
 
-The reason: IAS 21 requires initial recognition of foreign-currency items at the transaction-date spot rate. This rate becomes the **historical rate** — the baseline for computing all future revaluation deltas. Without it, the first revaluation has no reference point. While the rate could theoretically be reverse-looked-up from the `exchange_rates` table by timestamp, storing it on the transaction is more reliable (eliminates ambiguity about which rate/source applied) and gives auditors a self-contained record of the USD-equivalent value at origination.
+The reason differs by currency type but the conclusion is the same:
+- **Fiat foreign currency:** IAS 21 requires initial recognition at the transaction-date spot rate. This becomes the **historical rate** — the baseline for all future revaluation deltas. Without it, the first revaluation has no reference point.
+- **BTC:** ASU 2023-08 requires fair value measurement. The rate at acquisition establishes the initial carrying value and cost basis for any future disposition.
+
+In both cases, while the rate could theoretically be reverse-looked-up from the `exchange_rates` table by timestamp, storing it on the transaction is more reliable (eliminates ambiguity about which rate/source applied) and gives auditors a self-contained record of the USD-equivalent value at origination.
 
 | Transaction Type | Rate Role | Why Record |
 |-----------------|-----------|------------|
 | Cross-currency (exchange) | **Input** — determines amounts on both legs | Required: the rate produced the entry amounts |
-| Single-currency foreign | **Metadata** — records functional-currency equivalent | Required: establishes historical rate for revaluation baseline and audit trail |
+| Single-currency fiat foreign | **Metadata** — records functional-currency equivalent | Required: establishes IAS 21 historical rate for revaluation baseline |
+| Single-currency BTC | **Metadata** — records USD fair value at acquisition | Required: establishes ASU 2023-08 initial carrying value and cost basis |
 
 Two approaches for recording:
 
@@ -492,10 +497,11 @@ Period-end revaluation follows two distinct regimes reflecting the accounting fr
 ```
 DAILY or MONTHLY (configurable per account type):
 
-1. IDENTIFY candidates
-   - All accounts with non-functional-currency balances
+1. IDENTIFY candidates (fiat foreign currency ONLY — exclude BTC accounts)
+   - All accounts with non-USD fiat currency balances (EUR, GBP, etc.)
    - All open foreign-currency receivables/payables
    - All foreign-currency cash/bank accounts
+   - NOTE: BTC accounts are excluded — they follow ASU 2023-08 (Component 5b)
 
 2. FETCH closing rates
    - Get CLOSING rate for each currency pair from exchange_rates table
@@ -591,13 +597,15 @@ Both the asset and liability sides move together — no P&L impact. This is hand
 
 ### Implementation
 
-Both fiat FX and BTC revaluation follow the established job pattern: `EndOfDay event → Handler → Collector → Worker`.
+Both fiat FX and BTC fair value revaluation follow the established job pattern: `EndOfDay event → Handler → Collector → Worker`, but they are **separate job chains** posting to different accounts (fiat → 6100/6200 Unrealized FX Gain/Loss; BTC → 7100/7200 BTC Fair Value Gain/Loss).
+
+#### Fiat FX Revaluation Jobs
 
 **Event Handler** — registered in module `init()`, listens for `CoreTimeEvent::EndOfDay`:
 
 ```rust
-// core/fx/src/jobs/end_of_day.rs (or core/credit/src/.../jobs/)
-const JOB_TYPE: JobType = JobType::new("task.collect-accounts-for-fx-revaluation");
+// core/fx/src/jobs/end_of_day.rs
+const JOB_TYPE: JobType = JobType::new("task.collect-fiat-accounts-for-fx-revaluation");
 
 pub struct FxRevaluationEndOfDayHandler {
     spawner: JobSpawner<CollectAccountsForRevaluationConfig>,
@@ -624,10 +632,10 @@ where
 }
 ```
 
-**Collector Job** — cursor-based pagination over accounts with foreign-currency balances:
+**Collector Job** — cursor-based pagination over fiat foreign-currency accounts (excludes BTC):
 
 ```rust
-// core/fx/src/jobs/collect_accounts_for_revaluation.rs
+// core/fx/src/jobs/collect_fiat_accounts_for_revaluation.rs
 const PAGE_SIZE: i64 = 100;
 
 #[derive(Serialize, Deserialize)]
@@ -648,7 +656,7 @@ impl JobRunner for CollectAccountsForRevaluationJobRunner {
 
         let mut op = self.pool.begin().await?;
         let accounts = self.repo
-            .list_foreign_currency_accounts_in_op(
+            .list_fiat_foreign_currency_accounts_in_op(
                 &mut op,
                 state.last_cursor,
                 PAGE_SIZE,
@@ -703,6 +711,52 @@ impl JobRunner for ProcessRevaluationJobRunner {
                 config.account_id,
                 adjustment,
                 config.closing_rate,
+                config.day,
+            ).await?;
+        }
+
+        Ok(JobCompletion::Complete)
+    }
+}
+```
+
+#### BTC Fair Value Revaluation Jobs
+
+A separate job chain handles platform-owned BTC. It posts fair value adjustments to BTC Fair Value Gain/Loss (7100/7200), not to the fiat FX unrealized accounts (6100/6200).
+
+```rust
+// core/fx/src/jobs/btc_fair_value_revaluation.rs
+const JOB_TYPE: JobType = JobType::new("task.collect-btc-accounts-for-fair-value-revaluation");
+
+pub struct BtcFairValueRevaluationEndOfDayHandler {
+    spawner: JobSpawner<CollectBtcAccountsForRevaluationConfig>,
+}
+// Same OutboxEventHandler<CoreTimeEvent> pattern as fiat FX handler
+```
+
+The collector lists platform-owned BTC accounts only (excludes custodied collateral accounts, which are handled by Component 6). The worker computes the delta between current fair value and last recorded carrying value, posting to 7100/7200:
+
+```rust
+impl JobRunner for ProcessBtcFairValueRevaluationJobRunner {
+    async fn run(&self, current_job: CurrentJob) -> Result<JobCompletion, Error> {
+        let config = current_job.config::<ProcessBtcFairValueRevalConfig>()?;
+
+        let btc_balance = self.accounting
+            .get_balance(config.account_id, CurrencyCode::BTC)
+            .await?;
+        let current_carrying_value = self.accounting
+            .get_functional_currency_balance(config.account_id)
+            .await?;
+        let new_fair_value = btc_balance * config.btc_usd_rate;
+        let adjustment = new_fair_value - current_carrying_value;
+
+        if !adjustment.is_zero() {
+            // Posts to 7100 BTC Fair Value Gain or 7200 BTC Fair Value Loss
+            // No auto-reversal — cumulative under ASU 2023-08
+            self.accounting.post_btc_fair_value_entry(
+                config.account_id,
+                adjustment,
+                config.btc_usd_rate,
                 config.day,
             ).await?;
         }
@@ -925,11 +979,15 @@ Triggered by the existing `CoreTimeEvent::EndOfDay` event, following the same ha
 
 ```
 CoreTimeEvent::EndOfDay { day }
-  ├── FxRevaluationEndOfDayHandler
-  │     └── CollectAccountsForRevaluationJob (cursor-paginated)
-  │           └── ProcessRevaluationJob (per account, posts entries)
+  ├── FxRevaluationEndOfDayHandler (fiat FX only — IAS 21)
+  │     └── CollectFiatAccountsForRevaluationJob (cursor-paginated)
+  │           └── ProcessFiatRevaluationJob (per account → 6100/6200)
   │
-  └── CollateralRevaluationEndOfDayHandler
+  ├── BtcFairValueRevaluationEndOfDayHandler (platform-owned BTC — ASU 2023-08)
+  │     └── CollectBtcAccountsForRevaluationJob (cursor-paginated, excludes collateral)
+  │           └── ProcessBtcFairValueRevaluationJob (per account → 7100/7200)
+  │
+  └── CollateralRevaluationEndOfDayHandler (custodied BTC — agent, no P&L)
         └── CollectFacilitiesForCollateralRevaluationJob (cursor-paginated)
               └── ProcessCollateralRevaluationJob (per facility, both-sides entry)
 ```
@@ -940,8 +998,14 @@ CoreTimeEvent::EndOfDay { day }
 // Registration follows the same pattern as credit facility jobs
 outbox.register_event_handler(
     jobs,
-    OutboxEventJobConfig::new(JOB_TYPE_COLLECT_FX_REVALUATION),
+    OutboxEventJobConfig::new(JOB_TYPE_COLLECT_FIAT_FX_REVALUATION),
     FxRevaluationEndOfDayHandler::new(collector_spawner),
+).await?;
+
+outbox.register_event_handler(
+    jobs,
+    OutboxEventJobConfig::new(JOB_TYPE_COLLECT_BTC_FAIR_VALUE_REVALUATION),
+    BtcFairValueRevaluationEndOfDayHandler::new(collector_spawner),
 ).await?;
 
 outbox.register_event_handler(
@@ -1157,7 +1221,7 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 - Implement rate source adapter trait and Bitfinex adapter (wrapping existing feed)
 - Add Coinbase and Kraken adapters
 - Build aggregator (median) with tolerance band filtering
-- Store rate used on each cross-currency transaction (metadata)
+- Store rate used on each cross-currency and single-currency non-USD transaction (metadata)
 
 ### Phase 2: Rate Robustness
 - Implement rate staleness enforcement
@@ -1177,18 +1241,22 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 - Add proof-of-reserves attestation entries
 - Cost basis / lot tracking for collateral liquidation
 
-### Phase 5: Chart of Accounts + General FX Revaluation
-- Add FX-specific accounts (realized gain/loss, unrealized gain/loss, rounding differences)
-- Build general revaluation (delta method) for fiat foreign-currency balances
-- Implement BTC fair value revaluation for platform-owned BTC
-- Build reconciliation job for revaluation verification
-- This phase is needed when a second fiat currency is introduced
+### Phase 5: BTC Fair Value Revaluation (Platform-Owned BTC)
+- Add BTC Fair Value Gain/Loss accounts (7100/7200)
+- Build BTC fair value revaluation job chain (separate from fiat FX)
+- Needed as soon as the platform owns any BTC (treasury, fee income)
 
-### Phase 6: Trading Accounts
-- Create trading account template for currency conversions
-- Route all FX conversions through trading account
+### Phase 6: Fiat FX Chart of Accounts + Revaluation
+- Add fiat FX-specific accounts (realized gain/loss, unrealized gain/loss, rounding differences)
+- Build fiat FX revaluation (delta method) for foreign-currency balances
+- Build reconciliation job for revaluation verification
+- Needed when a second fiat currency is introduced
+
+### Phase 7: Fiat FX Trading Accounts
+- Create trading account template for fiat-to-fiat conversions only
+- Route all fiat FX conversions through trading account
 - Realized gain/loss posting on position closure
-- Needed when 3+ currencies create cross-rate complexity
+- Needed when 3+ fiat currencies create cross-rate complexity
 
 ## Dependencies
 
