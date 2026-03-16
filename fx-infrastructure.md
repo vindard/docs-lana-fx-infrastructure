@@ -328,62 +328,84 @@ CALA entries support metadata. Store the rate on each entry:
 
 ### Concept
 
-A **trading account** is an intermediary account that all currency conversions flow through. It absorbs exchange rate differences and its running balance represents the cumulative unrealized FX gain/loss.
+A **trading account** is an intermediary account that fiat currency conversions flow through. It absorbs exchange rate differences and its running balance represents the cumulative unrealized FX gain/loss.
+
+### BTC Does Not Flow Through the Trading Account
+
+The trading account is a **fiat FX concept only**. BTC must not be routed through the same trading account as fiat currencies because the two fall under fundamentally different accounting regimes:
+
+| Concern | What Goes Wrong If BTC Uses the Trading Account |
+|---------|--------------------------------------------------|
+| **Revaluation incoherence** | The BTC portion requires ASU 2023-08 treatment (fair value → P&L, cumulative, no reversal) while the fiat portion requires IAS 21 treatment (closing rate, delta/reversal). Two regimes cannot be applied to the same account balance. |
+| **Meaningless net position** | A balance of "+50,000 USD, -1 BTC, -10,000 EUR" mixes an intangible asset fair value position with foreign currency exposure. The net has no accounting interpretation. |
+| **Disclosure failure** | Financial statements must disclose FX gains/losses (IAS 21) separately from fair value adjustments on intangible assets (ASU 2023-08). A commingled trading account makes this segregation impossible without sub-account decomposition. |
+
+The correct routing by currency type:
+
+| Currency Type | Mechanism | Revaluation Regime |
+|---------------|-----------|-------------------|
+| Fiat (EUR, GBP, etc.) | FX Trading Account (Selinger) | IAS 21: closing rate, delta/reversal |
+| BTC (platform-owned) | Direct fair value tracking | ASU 2023-08: fair value → P&L, cumulative |
+| BTC (custodied collateral) | Both-sides entries (Component 6) | Agent relationship, no P&L |
 
 ### Chart of Accounts Additions
 
 ```
 EQUITY / FX
-  3200  FX Trading Account           -- intermediary for all conversions
+  3200  FX Trading Account           -- intermediary for fiat-to-fiat conversions ONLY
   3210  FX Rounding Differences       -- suspense account for rounding variances
                                       -- from cross-rate triangulation and
                                       -- conversion rounding
 
 REVENUE
-  4200  Realized FX Gain             -- closed FX positions (permanent)
+  4200  Realized FX Gain             -- closed fiat FX positions (permanent)
 
 EXPENSES
-  5100  Realized FX Loss             -- closed FX positions (permanent)
+  5100  Realized FX Loss             -- closed fiat FX positions (permanent)
 
 OTHER INCOME / EXPENSE
-  6100  Unrealized FX Gain           -- period-end revaluation (auto-reversing)
-  6200  Unrealized FX Loss           -- period-end revaluation (auto-reversing)
+  6100  Unrealized FX Gain           -- fiat FX period-end revaluation (IAS 21)
+  6200  Unrealized FX Loss           -- fiat FX period-end revaluation (IAS 21)
+
+BTC FAIR VALUE (separate from FX)
+  7100  BTC Fair Value Gain          -- ASU 2023-08: fair value increase on platform-owned BTC
+  7200  BTC Fair Value Loss          -- ASU 2023-08: fair value decrease on platform-owned BTC
 ```
 
 The **FX Rounding Differences (3210)** account accumulates small variances that arise from:
-- Cross-rate triangulation (e.g., EUR→USD→BTC introduces rounding at each step)
+- Cross-rate triangulation (e.g., EUR→GBP via USD introduces rounding at each step)
 - Conversion rounding where debits and credits differ by fractions of a cent
 - Inverse rate calculations (`1/rate` is not perfectly reversible at finite precision)
 
 This account should be monitored and periodically cleared to P&L when balances exceed a materiality threshold.
 
-### How Conversions Flow Through the Trading Account
+### How Fiat Conversions Flow Through the Trading Account
 
-**Example: Converting USD 50,000 to BTC at rate $50,000/BTC = 1 BTC**
+**Example: Converting USD 50,000 to EUR at rate 1.10 USD/EUR = EUR 45,454.55**
 
 ```
 Entry 1 (USD side):
   Dr  FX Trading Account       50,000 USD
     Cr  USD Cash                         50,000 USD
 
-Entry 2 (BTC side):
-  Dr  BTC Holdings              1.00000000 BTC
-    Cr  FX Trading Account               1.00000000 BTC
+Entry 2 (EUR side):
+  Dr  EUR Cash                  45,454.55 EUR
+    Cr  FX Trading Account               45,454.55 EUR
 ```
 
-Trading account now holds: `+50,000 USD` and `-1 BTC`. At current rate ($50,000), net value = 0.
+Trading account now holds: `+50,000 USD` and `-45,454.55 EUR`. At current rate (1.10), net value = 0.
 
-**If BTC rises to $55,000:**
-Trading account: `+50,000 USD` and `-1 BTC` (= -$55,000 equivalent).
-Net value = 50,000 - 55,000 = **-$5,000** = unrealized gain of $5,000 (credit balance in an equity account = gain).
+**If EUR strengthens to 1.05 USD/EUR:**
+EUR equivalent = 45,454.55 × 1.05 = $47,727.27. Trading account net = 50,000 - 47,727.27 = **+$2,272.73** = unrealized loss.
 
-**If BTC drops to $45,000:**
-Net value = 50,000 - 45,000 = **+$5,000** = unrealized loss of $5,000.
+**If EUR weakens to 1.15 USD/EUR:**
+EUR equivalent = 45,454.55 × 1.15 = $52,272.73. Trading account net = 50,000 - 52,272.73 = **-$2,272.73** = unrealized gain.
 
-### CALA Template: FX Conversion via Trading Account
+### CALA Template: Fiat FX Conversion via Trading Account
 
 ```rust
-// Template: fx_buy_via_trading
+// Template: fiat_fx_conversion_via_trading
+// Used ONLY for fiat-to-fiat conversions (e.g., USD/EUR, USD/GBP)
 entries: [
     // Leg 1: Source currency out
     Entry {
@@ -418,27 +440,38 @@ entries: [
 ]
 ```
 
-### Alternative: Direct Gain/Loss Booking (No Trading Account)
+### BTC Conversions: Direct Fair Value Booking
 
-Some systems skip trading accounts and post gain/loss directly:
+Platform-owned BTC uses direct booking with fair value tracking under ASU 2023-08. No trading account intermediary.
+
+**Acquiring BTC (e.g., purchasing 1 BTC at $50,000):**
 
 ```
-Dr  BTC Holdings              1 BTC    [= $50,000]
+Dr  BTC Holdings              1.00000000 BTC   [= $50,000 fair value at acquisition]
   Cr  USD Cash                          $50,000
-
-// On sale at $55,000:
-Dr  USD Cash                   $55,000
-  Cr  BTC Holdings                      1 BTC    [= $50,000 cost basis]
-  Cr  Realized FX Gain                  $5,000
 ```
 
-This is simpler but requires tracking cost basis per lot (FIFO/LIFO/specific identification). Trading accounts avoid this complexity by letting the balance do the tracking.
+**Fair value adjustment (BTC rises to $55,000):**
+
+```
+Dr  BTC Holdings              $5,000 USD
+  Cr  BTC Fair Value Gain (P&L)        $5,000 USD
+```
+
+**Disposing of BTC (selling 1 BTC at $55,000):**
+
+```
+Dr  USD Cash                   $55,000
+  Cr  BTC Holdings                      1.00000000 BTC   [= $55,000 current carrying value]
+```
+
+No separate realized gain/loss entry is needed because the carrying value already reflects cumulative fair value adjustments. The gain was recognized incrementally through P&L as it occurred.
 
 ### Scoping Note
 
-Trading accounts deliver maximum value when the system handles **3 or more currencies**. With only BTC/USD, the direct gain/loss approach is simpler and sufficient because there is only one conversion path and no cross-rate complexity.
+Trading accounts deliver maximum value when the system handles **3 or more fiat currencies**. With only USD as the functional currency, there are no fiat FX conversions to route through a trading account.
 
-**Recommendation:** Implement direct gain/loss booking as the interim solution for BTC/USD-only operations. Introduce the full trading account machinery when a second fiat currency (e.g., EUR) is added, at which point cross-rate triangulation and multi-leg conversions make the intermediary account essential.
+**Recommendation:** BTC always uses direct fair value booking (ASU 2023-08), regardless of how many currencies the platform supports. The fiat FX trading account should be introduced when a second fiat currency (e.g., EUR) is added, at which point cross-rate triangulation and multi-leg conversions make the intermediary account essential. With 3+ fiat currencies, the trading account becomes near-mandatory for tractable accounting.
 
 ### Rate Locking and Spread Considerations
 
