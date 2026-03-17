@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX Infrastructure — Workstream 2</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --c-bg: #0f1117;
+    --c-bg-card: #1a1d27;
+    --c-bg-card-alt: #222637;
+    --c-text: #e2e4ea;
+    --c-text-muted: #8b8fa3;
+    --c-accent: #6c8cff;
+    --c-accent-dim: rgba(108, 140, 255, 0.15);
+    --c-green: #4ade80;
+    --c-green-dim: rgba(74, 222, 128, 0.15);
+    --c-red: #f87171;
+    --c-red-dim: rgba(248, 113, 113, 0.15);
+    --c-amber: #fbbf24;
+    --c-amber-dim: rgba(251, 191, 36, 0.15);
+    --c-purple: #a78bfa;
+    --c-purple-dim: rgba(167, 139, 250, 0.15);
+    --c-cyan: #22d3ee;
+    --c-cyan-dim: rgba(34, 211, 238, 0.15);
+    --r-background-color: var(--c-bg);
+    --r-main-font: 'Inter', -apple-system, system-ui, sans-serif;
+    --r-heading-font: 'Inter', -apple-system, system-ui, sans-serif;
+    --r-code-font: 'JetBrains Mono', monospace;
+    --r-main-font-size: 28px;
+    --r-main-color: var(--c-text);
+    --r-heading-color: #fff;
+    --r-link-color: var(--c-accent);
+  }
+
+  .reveal { font-weight: 400; }
+  .reveal h1, .reveal h2, .reveal h3 { font-weight: 600; letter-spacing: -0.02em; }
+  .reveal h1 { font-size: 2.2em; }
+  .reveal h2 { font-size: 1.6em; margin-bottom: 0.6em; }
+  .reveal h3 { font-size: 1.1em; color: var(--c-accent); font-weight: 500; margin-bottom: 0.4em; }
+
+  .reveal .slides section { text-align: left; }
+  .reveal .slides section.center-slide { text-align: center; }
+
+  /* ── Section Dividers ── */
+  .section-divider {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center !important;
+  }
+  .section-divider .section-number {
+    font-size: 0.7em; font-weight: 500; color: var(--c-accent);
+    letter-spacing: 0.15em; text-transform: uppercase;
+    margin-bottom: 0.3em;
+  }
+  .section-divider h2 { text-align: center; margin-bottom: 0.3em; }
+  .section-divider .section-subtitle {
+    font-size: 0.7em; color: var(--c-text-muted);
+    max-width: 600px; text-align: center;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--c-bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 1em 1.2em;
+    margin: 0.4em 0;
+  }
+  .card-accent { border-left: 3px solid var(--c-accent); }
+  .card-green  { border-left: 3px solid var(--c-green); }
+  .card-red    { border-left: 3px solid var(--c-red); }
+  .card-amber  { border-left: 3px solid var(--c-amber); }
+  .card-purple { border-left: 3px solid var(--c-purple); }
+  .card-cyan   { border-left: 3px solid var(--c-cyan); }
+
+  /* ── Grid Layouts ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8em; }
+  .grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 1em; }
+  .grid-1-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 1em; }
+
+  /* ── Lists ── */
+  .reveal ul, .reveal ol { margin-left: 0; }
+  .reveal li { font-size: 0.82em; margin-bottom: 0.4em; color: var(--c-text); line-height: 1.5; }
+  .reveal li::marker { color: var(--c-accent); }
+
+  /* ── Tags / Pills ── */
+  .tag {
+    display: inline-block; font-size: 0.55em; font-weight: 600;
+    padding: 0.15em 0.6em; border-radius: 999px;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    vertical-align: middle;
+  }
+  .tag-red    { background: var(--c-red-dim);    color: var(--c-red); }
+  .tag-green  { background: var(--c-green-dim);  color: var(--c-green); }
+  .tag-amber  { background: var(--c-amber-dim);  color: var(--c-amber); }
+  .tag-accent { background: var(--c-accent-dim); color: var(--c-accent); }
+  .tag-purple { background: var(--c-purple-dim); color: var(--c-purple); }
+  .tag-cyan   { background: var(--c-cyan-dim);   color: var(--c-cyan); }
+
+  /* ── Tables ── */
+  .reveal table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    font-size: 0.68em; margin: 0.5em 0;
+  }
+  .reveal table th {
+    background: var(--c-bg-card-alt); color: var(--c-text-muted);
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 0.85em; padding: 0.7em 0.8em;
+    border-bottom: 2px solid rgba(255,255,255,0.08);
+  }
+  .reveal table td {
+    padding: 0.6em 0.8em;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    color: var(--c-text);
+  }
+  .reveal table tr:last-child td { border-bottom: none; }
+  .reveal table th:first-child { border-radius: 8px 0 0 0; }
+  .reveal table th:last-child  { border-radius: 0 8px 0 0; }
+
+  /* ── Code ── */
+  .reveal pre {
+    background: var(--c-bg-card); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; padding: 0.8em 1em;
+    font-size: 0.52em; width: 100%; box-sizing: border-box;
+  }
+  .reveal code { font-family: var(--r-code-font); font-size: 0.85em; color: var(--c-cyan); }
+  .reveal pre code { color: var(--c-text); font-size: 1em; }
+
+  /* ── Diagram boxes ── */
+  .diagram-flow {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.4em; flex-wrap: wrap; margin: 0.8em 0;
+  }
+  .diagram-box {
+    background: var(--c-bg-card); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; padding: 0.6em 1em;
+    font-size: 0.7em; font-weight: 500; text-align: center;
+    min-width: 100px;
+  }
+  .diagram-box.highlight { border-color: var(--c-accent); background: var(--c-accent-dim); }
+  .diagram-arrow { color: var(--c-text-muted); font-size: 1.2em; }
+
+  /* ── Metric blocks ── */
+  .metric {
+    text-align: center; padding: 0.8em 0.5em;
+  }
+  .metric .value {
+    font-size: 2em; font-weight: 700; color: #fff;
+    line-height: 1.1;
+  }
+  .metric .label {
+    font-size: 0.6em; color: var(--c-text-muted);
+    margin-top: 0.3em; line-height: 1.3;
+  }
+
+  /* ── Callout ── */
+  .callout {
+    background: var(--c-accent-dim);
+    border: 1px solid rgba(108, 140, 255, 0.2);
+    border-radius: 10px; padding: 0.7em 1em;
+    font-size: 0.75em; color: var(--c-text);
+    margin: 0.6em 0;
+  }
+  .callout-amber {
+    background: var(--c-amber-dim);
+    border-color: rgba(251, 191, 36, 0.2);
+  }
+
+  /* ── Muted / Accent text ── */
+  .muted { color: var(--c-text-muted); }
+  .accent { color: var(--c-accent); }
+  .green { color: var(--c-green); }
+  .red { color: var(--c-red); }
+  .amber { color: var(--c-amber); }
+  .purple { color: var(--c-purple); }
+  .cyan { color: var(--c-cyan); }
+  .small { font-size: 0.7em; }
+  .smaller { font-size: 0.6em; }
+  .tiny { font-size: 0.5em; }
+
+  /* ── Timeline / Phases ── */
+  .phase-row {
+    display: flex; align-items: stretch; gap: 0.5em;
+    margin: 0.35em 0;
+  }
+  .phase-marker {
+    min-width: 36px; display: flex; align-items: center; justify-content: center;
+    font-size: 0.6em; font-weight: 700; border-radius: 8px;
+    color: #fff;
+  }
+  .phase-content {
+    flex: 1; background: var(--c-bg-card); border-radius: 8px;
+    padding: 0.5em 0.8em; font-size: 0.68em;
+  }
+  .phase-content .phase-title { font-weight: 600; color: #fff; margin-bottom: 0.15em; }
+  .phase-content .phase-desc { color: var(--c-text-muted); font-size: 0.9em; }
+
+  /* ── VS Layout ── */
+  .vs-divider {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7em; font-weight: 700; color: var(--c-text-muted);
+    margin: 0.3em 0;
+  }
+
+  /* ── Progress indicator ── */
+  .progress-dots {
+    display: flex; gap: 0.4em; justify-content: center; margin-bottom: 1em;
+  }
+  .progress-dots .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+  .progress-dots .dot.active { background: var(--c-accent); }
+  .progress-dots .dot.done { background: var(--c-green); }
+
+  /* ── Icon-like circles ── */
+  .icon-circle {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2em; margin-bottom: 0.5em;
+  }
+
+  /* ── Slide-specific overrides ── */
+  .title-slide h1 { font-size: 2.6em; margin-bottom: 0.1em; }
+  .title-slide .subtitle { font-size: 0.8em; color: var(--c-text-muted); font-weight: 300; }
+
+  /* Animated reveal helpers */
+  .reveal .fragment.semi-fade-out.visible { opacity: 0.35; }
+
+  /* Override reveal's default centering */
+  .reveal .slides > section > section { padding: 20px 50px; }
+  .reveal .slides > section { padding: 20px 50px; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ════════════════════════════════════════════════════
+     TITLE
+     ════════════════════════════════════════════════════ -->
+<section class="center-slide title-slide">
+  <h1>FX Infrastructure</h1>
+  <p class="subtitle">From <code>PriceOfOneBTC</code> to production-grade multicurrency accounting</p>
+  <br>
+  <p class="small muted">Workstream 2 &nbsp;·&nbsp; Lana Bank</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════
+     AGENDA
+     ════════════════════════════════════════════════════ -->
+<section>
+  <h2>Agenda</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6em;">
+    <div class="card card-red">
+      <h3 style="color: var(--c-red); margin: 0;">1 &nbsp;The Problem</h3>
+      <p class="small muted" style="margin: 0.3em 0 0;">What we have today and why it can't scale</p>
+    </div>
+    <div class="card card-accent">
+      <h3 style="margin: 0;">2 &nbsp;The Accounting Reality</h3>
+      <p class="small muted" style="margin: 0.3em 0 0;">Two regimes that drive every design decision</p>
+    </div>
+    <div class="card card-purple">
+      <h3 style="color: var(--c-purple); margin: 0;">3 &nbsp;The Architecture</h3>
+      <p class="small muted" style="margin: 0.3em 0 0;">8 components, how they connect</p>
+    </div>
+    <div class="card card-green">
+      <h3 style="color: var(--c-green); margin: 0;">4 &nbsp;The Roadmap</h3>
+      <p class="small muted" style="margin: 0.3em 0 0;">6 phases, each delivering value incrementally</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     ACT 1 — THE PROBLEM
+     ════════════════════════════════════════════════════ -->
+<section class="section-divider">
+  <div class="section-number">Act 1</div>
+  <h2>The Problem</h2>
+  <div class="section-subtitle">We have a single struct converting BTC↔USD. That's it.</div>
+</section>
+
+<!-- What we have today -->
+<section>
+  <h2>Today: <code>PriceOfOneBTC</code></h2>
+  <div class="grid-2-1">
+    <div>
+      <pre><code>struct PriceOfOneBTC(UsdCents);
+
+impl PriceOfOneBTC {
+    // USD → BTC: rounds UP (conservative)
+    fn cents_to_sats_round_up(&self, cents: UsdCents)
+        -> Satoshis;
+
+    // BTC → USD: rounds DOWN (conservative)
+    fn sats_to_cents_round_down(&self, sats: Satoshis)
+        -> UsdCents;
+}</code></pre>
+      <p class="small muted" style="margin-top: 0.5em;">This is the <em>entire</em> FX infrastructure.</p>
+    </div>
+    <div>
+      <div class="card card-red" style="padding: 0.6em 0.8em;">
+        <p class="small" style="margin: 0; font-weight: 600; color: var(--c-red);">Limitations</p>
+        <ul class="small" style="margin-top: 0.3em;">
+          <li>BTC↔USD only</li>
+          <li>Single source (Bitfinex)</li>
+          <li>No rate history</li>
+          <li>No per-txn recording</li>
+          <li>Hardcoded rounding</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- The gap -->
+<section>
+  <h2>What's Missing <span class="tag tag-red">Not Implemented</span></h2>
+  <div class="grid-2">
+    <div class="card" style="padding: 0.5em 0.8em;">
+      <p class="small" style="margin: 0 0 0.3em; font-weight: 600; color: var(--c-amber);">Rate Infrastructure</p>
+      <ul class="smaller" style="margin: 0;">
+        <li>Historical rate storage</li>
+        <li>Multi-pair rate service</li>
+        <li>Multi-source aggregation</li>
+        <li>Rate staleness / circuit breakers</li>
+        <li>Rate per transaction</li>
+      </ul>
+    </div>
+    <div class="card" style="padding: 0.5em 0.8em;">
+      <p class="small" style="margin: 0 0 0.3em; font-weight: 600; color: var(--c-purple);">Accounting Machinery</p>
+      <ul class="smaller" style="margin: 0;">
+        <li>Trading accounts (Selinger model)</li>
+        <li>Unrealized FX gain/loss accounts</li>
+        <li>Realized FX gain/loss accounts</li>
+        <li>Period-end revaluation batch</li>
+        <li>Auto-reversal of reval entries</li>
+      </ul>
+    </div>
+    <div class="card" style="padding: 0.5em 0.8em;">
+      <p class="small" style="margin: 0 0 0.3em; font-weight: 600; color: var(--c-cyan);">BTC-Specific</p>
+      <ul class="smaller" style="margin: 0;">
+        <li>Collateral mark-to-market entries</li>
+        <li>Cost basis / lot tracking</li>
+        <li>Segregation controls</li>
+        <li>On-chain reconciliation</li>
+      </ul>
+    </div>
+    <div class="card" style="padding: 0.5em 0.8em;">
+      <p class="small" style="margin: 0 0 0.3em; font-weight: 600; color: var(--c-green);">What Exists</p>
+      <ul class="smaller" style="margin: 0;">
+        <li style="color: var(--c-green);">&#10003; LTV calculation (runtime only)</li>
+        <li style="color: var(--c-green);">&#10003; Bitfinex price feed</li>
+        <li style="color: var(--c-green);">&#10003; BTC↔USD conversion</li>
+        <li style="color: var(--c-text-muted);">&nbsp;</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- The key question -->
+<section>
+  <h2>Why not just add more currency pairs?</h2>
+  <div class="callout-amber callout" style="margin: 0.6em 0; font-size: 0.8em;">
+    Because FX isn't just conversion — it's an <strong>accounting regime</strong> with rate history, gain/loss tracking, revaluation, and regulatory requirements. Adding a pair without the infrastructure underneath means every balance is wrong by end-of-quarter.
+  </div>
+  <div class="fragment">
+    <p class="small muted" style="margin-bottom: 0.3em;">Three questions that nothing in the codebase can answer today:</p>
+    <div class="grid-3">
+      <div class="card" style="text-align: center; padding: 0.6em;">
+        <p class="small" style="margin: 0; font-weight: 600; color: var(--c-accent);">Rate Provenance</p>
+        <p class="smaller muted" style="margin: 0.2em 0 0;">"What rate was used for transaction X?"</p>
+      </div>
+      <div class="card" style="text-align: center; padding: 0.6em;">
+        <p class="small" style="margin: 0; font-weight: 600; color: var(--c-accent);">Historical Lookup</p>
+        <p class="smaller muted" style="margin: 0.2em 0 0;">"What was BTC/USD at 3pm last Tuesday?"</p>
+      </div>
+      <div class="card" style="text-align: center; padding: 0.6em;">
+        <p class="small" style="margin: 0; font-weight: 600; color: var(--c-accent);">Period-End Accuracy</p>
+        <p class="smaller muted" style="margin: 0.2em 0 0;">"What closing rate do we use for revaluation?"</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     ACT 2 — ACCOUNTING REALITY
+     ════════════════════════════════════════════════════ -->
+<section class="section-divider">
+  <div class="section-number">Act 2</div>
+  <h2>Two Accounting Regimes</h2>
+  <div class="section-subtitle">BTC is not a foreign currency. This distinction drives every design decision.</div>
+</section>
+
+<!-- Two regimes side by side -->
+<section>
+  <h2>Fiat FX vs BTC: Different Standards, Different Rules</h2>
+  <div class="grid-2">
+    <div class="card card-accent">
+      <h3 style="color: var(--c-accent); margin-top: 0;">Fiat FX &nbsp;<span class="tag tag-accent">IAS 21 / ASC 830</span></h3>
+      <ul class="smaller" style="margin: 0;">
+        <li>Classification: <strong>Foreign currency</strong></li>
+        <li>Record at <strong>spot rate</strong> on transaction date</li>
+        <li>Revalue monetary items at <strong>closing rate</strong></li>
+        <li>Unrealized gains/losses → P&L or OCI</li>
+        <li>Period-end: <strong>delta or reversal</strong> method</li>
+      </ul>
+    </div>
+    <div class="card card-amber">
+      <h3 style="color: var(--c-amber); margin-top: 0;">BTC &nbsp;<span class="tag tag-amber">FASB ASU 2023-08</span></h3>
+      <ul class="smaller" style="margin: 0;">
+        <li>Classification: <strong>Intangible asset at fair value</strong></li>
+        <li>Fair value changes → <strong>net income (P&L)</strong></li>
+        <li>No unrealized/realized distinction</li>
+        <li>Adjustments are <strong>cumulative</strong>, no reversal</li>
+        <li>Like trading securities under ASC 320</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout fragment" style="font-size: 0.7em; margin-top: 0.5em;">
+    <strong>Key implication:</strong> BTC and fiat cannot share a trading account. Two regimes applied to one account balance produces incoherent financials. This is why the architecture separates them throughout.
+  </div>
+</section>
+
+<!-- The agent exception -->
+<section>
+  <h2>BTC Collateral: The Agent Exception</h2>
+  <div class="grid-2">
+    <div>
+      <p class="small">When Lana holds BTC as <strong>agent</strong> (collateral on behalf of borrowers):</p>
+      <ul class="small">
+        <li>Asset (collateral held) and liability (obligation to return) move <strong>together</strong></li>
+        <li class="green"><strong>No P&L impact</strong> — the platform doesn't own this BTC</li>
+        <li>Revenue comes from <strong>interest income</strong>, not crypto appreciation</li>
+        <li>Revaluation still needed for <strong>LTV monitoring</strong></li>
+      </ul>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>BTC Type</th><th>Regime</th><th>P&L?</th></tr></thead>
+        <tbody>
+          <tr><td>Custodied collateral</td><td>Agent</td><td class="green">No</td></tr>
+          <tr><td>Platform-owned</td><td>ASU 2023-08</td><td class="amber">Yes</td></tr>
+          <tr><td>Fee income (in BTC)</td><td>ASU 2023-08</td><td class="amber">Yes</td></tr>
+        </tbody>
+      </table>
+      <p class="smaller muted" style="margin-top: 0.5em;">This three-way split — fiat FX, platform BTC, custodied BTC — is why the architecture has three separate revaluation job chains.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Why both rate history and per-txn -->
+<section>
+  <h2>Why We Need <em>Both</em> Rate History and Per-Transaction Rates</h2>
+  <p class="small muted">Today's <code>PriceOfOneBTC</code> has neither. Building proper FX requires both — they serve fundamentally different purposes.</p>
+  <div class="grid-2" style="margin-top: 0.4em;">
+    <div class="card card-accent" style="padding: 0.5em 0.8em;">
+      <p class="small" style="margin: 0; font-weight: 600;">"What was the rate at time T?"</p>
+      <p class="tiny muted" style="margin: 0;">→ Rate History Table</p>
+      <ul class="tiny" style="margin: 0.3em 0 0;">
+        <li>Closing rates for revaluation (even on no-txn days)</li>
+        <li>Rate quoting before any transaction exists</li>
+        <li>Source health analysis</li>
+        <li>Efficient indexed lookups</li>
+      </ul>
+    </div>
+    <div class="card card-purple" style="padding: 0.5em 0.8em;">
+      <p class="small" style="margin: 0; font-weight: 600;">"What rate produced these amounts?"</p>
+      <p class="tiny muted" style="margin: 0;">→ Transaction Metadata</p>
+      <ul class="tiny" style="margin: 0.3em 0 0;">
+        <li>Authoritative audit trail (exact, not interpolated)</li>
+        <li>Locked/agreed rates that differ from market</li>
+        <li>IAS 21 historical rate baseline for reval deltas</li>
+        <li>ASU 2023-08 initial carrying value</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout fragment" style="font-size: 0.65em; margin-top: 0.4em;">
+    <strong>Cross-validation:</strong> Comparing rate history against per-transaction rates catches anomalies — "Was the rate used for transaction X reasonable given market conditions?"
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     ACT 3 — THE ARCHITECTURE
+     ════════════════════════════════════════════════════ -->
+<section class="section-divider">
+  <div class="section-number">Act 3</div>
+  <h2>The Architecture</h2>
+  <div class="section-subtitle">8 components that build on each other to form a complete FX system</div>
+</section>
+
+<!-- Component Map -->
+<section>
+  <h2>Component Map</h2>
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4em;">
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-amber); font-weight: 600;">C1</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Rate Storage</p>
+      <p class="tiny muted" style="margin: 0;">Historical rates, indexed lookups</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-amber); font-weight: 600;">C2</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Multi-Source Aggregation</p>
+      <p class="tiny muted" style="margin: 0;">3+ providers, median, fallback</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-accent); font-weight: 600;">C3</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Per-Txn Recording</p>
+      <p class="tiny muted" style="margin: 0;">Rate as template param</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-accent); font-weight: 600;">C4</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Trading Accounts</p>
+      <p class="tiny muted" style="margin: 0;">Selinger model, fiat only</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-purple); font-weight: 600;">C5</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Period-End Reval</p>
+      <p class="tiny muted" style="margin: 0;">Fiat + BTC, separate chains</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-purple); font-weight: 600;">C6</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">BTC Collateral</p>
+      <p class="tiny muted" style="margin: 0;">Both-sides, no P&L</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-cyan); font-weight: 600;">C7</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Job Orchestration</p>
+      <p class="tiny muted" style="margin: 0;">obix jobs, event-driven</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-cyan); font-weight: 600;">C8</p>
+      <p class="smaller" style="margin: 0.15em 0 0; font-weight: 500;">Regulatory / Reporting</p>
+      <p class="tiny muted" style="margin: 0;">Audit trail, methodology docs</p>
+    </div>
+  </div>
+  <div class="diagram-flow" style="margin-top: 0.6em;">
+    <div class="diagram-box" style="border-color: var(--c-amber); font-size: 0.6em;">
+      <span class="amber">Foundation</span><br>C1 + C2
+    </div>
+    <span class="diagram-arrow">→</span>
+    <div class="diagram-box" style="border-color: var(--c-accent); font-size: 0.6em;">
+      <span class="accent">Accounting</span><br>C3 + C4
+    </div>
+    <span class="diagram-arrow">→</span>
+    <div class="diagram-box" style="border-color: var(--c-purple); font-size: 0.6em;">
+      <span class="purple">Automation</span><br>C5 + C6
+    </div>
+    <span class="diagram-arrow">→</span>
+    <div class="diagram-box" style="border-color: var(--c-cyan); font-size: 0.6em;">
+      <span class="cyan">Operations</span><br>C7 + C8
+    </div>
+  </div>
+</section>
+
+<!-- C1+C2: Rate Foundation -->
+<section>
+  <h2><span class="amber">C1</span> Rate Storage + <span class="amber">C2</span> Multi-Source Aggregation</h2>
+  <div class="grid-2">
+    <div>
+      <pre><code>exchange_rates
+├── from_currency   (BTC, USD, EUR)
+├── to_currency
+├── rate            DECIMAL(18,10)
+├── rate_timestamp
+├── rate_type       (SPOT, CLOSING)
+└── source          (BITFINEX, COINBASE, ...)</code></pre>
+      <p class="smaller muted" style="margin-top: 0.3em;">Indexed by <code>(pair, type, timestamp DESC)</code> for fast lookups. Supports direct, inverse, and cross-rate triangulation via USD.</p>
+    </div>
+    <div>
+      <div class="card" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
+        <p class="tiny" style="margin: 0; font-weight: 600; color: var(--c-green);">Aggregation Strategy</p>
+        <p class="tiny" style="margin: 0.2em 0 0;">3+ independent sources → <strong>median</strong> (robust to outliers) → tolerance band filtering → store both aggregated + individual source rates</p>
+      </div>
+      <div class="card" style="padding: 0.5em 0.8em;">
+        <p class="tiny" style="margin: 0; font-weight: 600; color: var(--c-red);">Safety Rails</p>
+        <ul class="tiny" style="margin: 0.2em 0 0;">
+          <li>BTC staleness: 60s (txn) / 5min (reporting)</li>
+          <li>Fiat staleness: 5min (txn) / 1hr (reporting)</li>
+          <li>Circuit breaker when sources < minimum</li>
+          <li>Rate drift detection on pending ops</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- C3+C4: Accounting Layer -->
+<section>
+  <h2><span class="accent">C3</span> Per-Txn Recording + <span class="accent">C4</span> Trading Accounts</h2>
+  <div class="grid-2">
+    <div>
+      <h3 style="color: var(--c-accent); font-size: 0.8em;">Every cross-currency entry carries its rate</h3>
+      <pre><code>CrossCurrencyEntryParams {
+    source_amount,
+    source_currency,
+    target_amount,
+    target_currency,
+    exchange_rate,     // the rate used
+    rate_timestamp,    // when it was observed
+}</code></pre>
+      <p class="tiny muted">Rate is a transaction property, not entry metadata. Stored as CALA template parameter.</p>
+    </div>
+    <div>
+      <h3 style="color: var(--c-accent); font-size: 0.8em;">Fiat FX flows through the Trading Account</h3>
+      <div class="card" style="padding: 0.5em 0.8em; font-size: 0.6em; font-family: var(--r-code-font);">
+        <p style="margin: 0; color: var(--c-text-muted);">USD 50k → EUR 45,455 @ 1.10</p>
+        <p style="margin: 0.3em 0 0;">Dr FX Trading Acct &nbsp;&nbsp;50,000 USD<br>
+        &nbsp;&nbsp;Cr USD Cash &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;50,000 USD</p>
+        <p style="margin: 0.3em 0 0;">Dr EUR Cash &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;45,455 EUR<br>
+        &nbsp;&nbsp;Cr FX Trading Acct &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;45,455 EUR</p>
+      </div>
+      <p class="tiny muted" style="margin-top: 0.3em;">Trading account running balance = cumulative unrealized FX gain/loss. BTC <strong>never</strong> flows through this account.</p>
+    </div>
+  </div>
+</section>
+
+<!-- BTC Never in Trading Account -->
+<section>
+  <h2>Critical: BTC Never Flows Through Trading Account</h2>
+  <table>
+    <thead><tr><th>If BTC Used Trading Account</th><th>Problem</th></tr></thead>
+    <tbody>
+      <tr><td>Same account balance</td><td>ASU 2023-08 (fair value) + IAS 21 (closing rate) = incoherent</td></tr>
+      <tr><td>Net position: +USD -BTC -EUR</td><td>Mixes intangible asset + FX exposure (no accounting meaning)</td></tr>
+      <tr><td>Single P&L account</td><td>Can't separate FX gains from fair value adjustments for disclosure</td></tr>
+    </tbody>
+  </table>
+  <div class="callout" style="margin-top: 0.5em;">
+    <strong>Separate routing:</strong> Fiat → Trading Account (3200). BTC → Direct fair value (7100/7200).
+  </div>
+</section>
+
+<!-- Rate Lookup Strategy -->
+<section>
+  <h2>Rate Lookup: Direct → Inverse → Cross-Rate</h2>
+  <div class="grid-2">
+    <div>
+      <pre><code>async fn get_rate(from, to, at, rate_type) {
+  // 1. Try direct pair
+  if let Some(rate) = find_rate(from, to) {
+    return Ok(rate);
+  }
+  // 2. Try inverse
+  if let Some(rate) = find_rate(to, from) {
+    return Ok(rate.invert());
+  }
+  // 3. Cross via USD triangulation
+  let from_usd = find_rate(from, USD)?;
+  let to_usd = find_rate(to, USD)?;
+  Ok(from_usd.cross(to_usd))
+}</code></pre>
+      <p class="tiny muted" style="margin-top: 0.3em;">Supports any pair via USD as pivot. Indexed by (pair, type, timestamp DESC).</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+      <div class="card" style="padding: 0.4em 0.6em;">
+        <p class="tiny" style="margin: 0; color: var(--c-green); font-weight: 600;">Direct: EUR/USD ✓</p>
+        <p class="tiny muted" style="margin: 0.1em 0 0;">Use rate directly</p>
+      </div>
+      <div class="card" style="padding: 0.4em 0.6em;">
+        <p class="tiny" style="margin: 0; color: var(--c-amber); font-weight: 600;">Inverse: USD/EUR → 1/rate</p>
+        <p class="tiny muted" style="margin: 0.1em 0 0;">Compute reciprocal</p>
+      </div>
+      <div class="card" style="padding: 0.4em 0.6em;">
+        <p class="tiny" style="margin: 0; color: var(--c-accent); font-weight: 600;">Cross: EUR→USD→JPY</p>
+        <p class="tiny muted" style="margin: 0.1em 0 0;">Triangulation via USD</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Chart of Accounts -->
+<section>
+  <h2>Chart of Accounts Additions</h2>
+  <p class="small muted">Separate accounts for fiat FX vs BTC fair value — never commingled.</p>
+  <div class="grid-2">
+    <div>
+      <h3 style="font-size: 0.75em; color: var(--c-accent);">Fiat FX (IAS 21)</h3>
+      <table>
+        <thead><tr><th>Code</th><th>Account</th><th>Type</th></tr></thead>
+        <tbody>
+          <tr><td>3200</td><td>FX Trading Account</td><td>Equity</td></tr>
+          <tr><td>3210</td><td>FX Rounding Differences</td><td>Equity</td></tr>
+          <tr><td>4200</td><td>Realized FX Gain</td><td>Revenue</td></tr>
+          <tr><td>5100</td><td>Realized FX Loss</td><td>Expense</td></tr>
+          <tr><td>6100</td><td>Unrealized FX Gain</td><td>Other</td></tr>
+          <tr><td>6200</td><td>Unrealized FX Loss</td><td>Other</td></tr>
+        </tbody>
+      </table>
+      <p class="tiny muted" style="margin-top: 0.3em;">3210 accumulates triangulation/conversion variances. Cleared to P&L periodically.</p>
+    </div>
+    <div>
+      <h3 style="font-size: 0.75em; color: var(--c-amber);">BTC Fair Value (ASU 2023-08)</h3>
+      <table>
+        <thead><tr><th>Code</th><th>Account</th><th>Type</th></tr></thead>
+        <tbody>
+          <tr><td>7100</td><td>BTC Fair Value Gain</td><td>P&L</td></tr>
+          <tr><td>7200</td><td>BTC Fair Value Loss</td><td>P&L</td></tr>
+        </tbody>
+      </table>
+      <div class="callout" style="font-size: 0.65em; margin-top: 0.5em; background: var(--c-amber-dim); border-color: rgba(251, 191, 36, 0.2);">
+        Fiat uses 6100/6200 for unrealized.<br>BTC uses 7100/7200 for fair value.<br><strong>Never cross-posted.</strong>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- C5: Revaluation -->
+<section>
+  <h2><span class="purple">C5</span> Period-End Revaluation</h2>
+  <p class="small muted">Three separate job chains, one event trigger. Each chain posts to its own accounts.</p>
+  <pre style="font-size: 0.48em; background: var(--c-bg-card); padding: 0.8em;"><code>CoreTimeEvent::EndOfDay { day }
+  │
+  ├─── <span style="color: var(--c-accent);">Fiat FX Revaluation</span> (IAS 21)
+  │      └── Collect fiat foreign-currency accounts → Process per account
+  │          → Posts to <span style="color: var(--c-accent);">6100/6200</span> Unrealized FX Gain/Loss
+  │          → <span style="color: var(--c-text-muted);">Delta method (recommended): incremental, idempotent, no reversals</span>
+  │
+  ├─── <span style="color: var(--c-amber);">BTC Fair Value Reval</span> (ASU 2023-08, platform-owned only)
+  │      └── Collect platform-owned BTC accounts → Process per account
+  │          → Posts to <span style="color: var(--c-amber);">7100/7200</span> BTC Fair Value Gain/Loss
+  │          → <span style="color: var(--c-text-muted);">Cumulative, no reversal</span>
+  │
+  └─── <span style="color: var(--c-green);">Collateral Reval</span> (agent, no P&L)
+         └── Collect active facilities with collateral → Process per facility
+             → <span style="color: var(--c-green);">Both-sides entry</span> (asset + liability move together)
+             → <span style="color: var(--c-text-muted);">No P&L, for LTV monitoring + regulatory reporting</span></code></pre>
+  <p class="tiny muted">All three follow the established handler → collector → worker pattern (obix crate). Same pattern as interest accrual.</p>
+</section>
+
+<!-- Revaluation Methods Detail -->
+<section>
+  <h2>Revaluation Methods: Delta vs Full Reversal</h2>
+  <div class="grid-2">
+    <div class="card card-accent" style="padding: 0.6em 0.8em;">
+      <h3 style="color: var(--c-accent); margin-top: 0; font-size: 0.9em;">Delta Method <span class="tag tag-green">Recommended</span></h3>
+      <p class="tiny muted" style="margin: 0.2em 0 0.4em;">Post only incremental difference from last revaluation</p>
+      <pre style="font-size: 0.5em; margin: 0.4em 0;"><code>// Jan 31: original rate 1.10, closing 1.12
+adjustment = balance × (1.12 - 1.10) = $2,000
+Dr EUR Receivable $2k | Cr Unrealized FX Gain $2k
+
+// Feb 28: closing 1.15  
+adjustment = balance × (1.15 - 1.12) = $3,000
+Dr EUR Receivable $3k | Cr Unrealized FX Gain $3k</code></pre>
+      <ul class="tiny" style="margin: 0.3em 0 0;">
+        <li>✓ No reversals needed</li>
+        <li>✓ Idempotent (can re-run safely)</li>
+        <li>✓ Clean mid-period settlements</li>
+        <li>✓ Used by SAP S/4HANA</li>
+      </ul>
+    </div>
+    <div class="card" style="padding: 0.6em 0.8em;">
+      <h3 style="margin-top: 0; font-size: 0.9em;">Full Reversal Method</h3>
+      <p class="tiny muted" style="margin: 0.2em 0 0.4em;">Post entry, auto-reverse on first day of next period</p>
+      <pre style="font-size: 0.5em; margin: 0.4em 0;"><code>// Feb 28 (revaluation)
+Dr EUR Receivable $5k | Cr Unrealized FX Gain $5k
+
+// Mar 1 (auto-reversal)
+Dr Unrealized FX Gain $5k | Cr EUR Receivable $5k</code></pre>
+      <ul class="tiny" style="margin: 0.3em 0 0;">
+        <li>• Higher journal volume</li>
+        <li>• Complex mid-period settlements</li>
+        <li>• Risk of orphaned reversals</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- C6: Collateral -->
+<section>
+  <h2><span class="purple">C6</span> BTC Collateral Lifecycle</h2>
+  <p class="small muted">Four states, each with distinct accounting entries. Both sides always move together.</p>
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4em; margin-top: 0.3em;">
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-green); font-weight: 600;">A. Receive</p>
+      <p class="tiny" style="margin: 0.2em 0 0;">Dr Collateral Held<br>Cr Collateral Obligation</p>
+      <p class="tiny muted" style="margin: 0.2em 0 0;">2 BTC @ $50k<br>LTV = 80%</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-amber); font-weight: 600;">B. Mark-to-Market</p>
+      <p class="tiny" style="margin: 0.2em 0 0;">Both sides adjust<br>by same USD amount</p>
+      <p class="tiny muted" style="margin: 0.2em 0 0;">BTC → $42k<br>LTV = 95.2%</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-red); font-weight: 600;">C. Liquidation</p>
+      <p class="tiny" style="margin: 0.2em 0 0;">Remove BTC from collateral<br>Sale proceeds → loan</p>
+      <p class="tiny muted" style="margin: 0.2em 0 0;">LTV breach<br>Sell 1.5 BTC</p>
+    </div>
+    <div class="card" style="text-align: center; padding: 0.5em;">
+      <p class="tiny" style="margin: 0; color: var(--c-accent); font-weight: 600;">D. Return</p>
+      <p class="tiny" style="margin: 0.2em 0 0;">Both accounts zero out<br>No gain/loss for platform</p>
+      <p class="tiny muted" style="margin: 0.2em 0 0;">Loan repaid<br>Return collateral</p>
+    </div>
+  </div>
+  <div class="grid-2" style="margin-top: 0.5em;">
+    <div class="callout" style="font-size: 0.6em;">
+      <strong>Segregation controls:</strong> Only authorized CALA templates can debit collateral accounts. Prevents commingling of customer and platform BTC.
+    </div>
+    <div class="callout" style="font-size: 0.6em; background: var(--c-green-dim); border-color: rgba(74, 222, 128, 0.2);">
+      <strong>Proof of reserves:</strong> Periodic reconciliation job compares on-chain custody wallet balances against ledger totals. Discrepancies alert immediately.
+    </div>
+  </div>
+</section>
+
+<!-- Cost Basis and Lot Tracking -->
+<section>
+  <h2><span class="purple">C6b</span> Cost Basis & Lot Tracking</h2>
+  <div class="grid-2">
+    <div>
+      <pre><code>struct CollateralLot {
+    facility_id: FacilityId,
+    deposit_timestamp: DateTime<Utc>,
+    btc_amount: Satoshis,
+    cost_basis: FunctionalCurrencyAmount,
+    rate_at_deposit: Decimal,
+}</code></pre>
+      <p class="small muted" style="margin-top: 0.3em;">Natural lot identification via per-facility deposits. No FIFO/LIFO assumptions needed.</p>
+    </div>
+    <div>
+      <div class="card" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
+        <p class="tiny" style="margin: 0; font-weight: 600; color: var(--c-accent);">Lot Identification Strategy</p>
+        <ul class="tiny" style="margin: 0.2em 0 0;">
+          <li><strong>Per-facility cost basis:</strong> Each facility's collateral tracked separately</li>
+          <li><strong>Specific identification:</strong> Facility ID + deposit timestamp + amount</li>
+          <li><strong>Multiple deposits:</strong> Each deposit is a separate lot (oldest-first liquidation)</li>
+        </ul>
+      </div>
+      <div class="callout" style="font-size: 0.6em;">
+        <strong>Tax reporting:</strong> Cost basis needed for liquidation events regardless of agent relationship.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Rate Safety: Tolerance Bands & Circuit Breakers -->
+<section>
+  <h2><span class="cyan">C2b</span> Rate Safety: Tolerance Bands & Circuit Breakers</h2>
+  <div class="grid-2">
+    <div>
+      <h3 style="font-size: 0.8em; color: var(--c-amber);">Tolerance Band Filtering</h3>
+      <div class="card" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
+        <p class="tiny" style="margin: 0;">Each source rate compared to median. Outliers excluded.</p>
+        <table style="margin: 0.3em 0 0; font-size: 0.85em;">
+          <thead><tr><th>Pair</th><th>Threshold</th></tr></thead>
+          <tbody>
+            <tr><td>BTC/USD</td><td>2%</td></tr>
+            <tr><td>EUR/USD</td><td>0.5%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="tiny muted">Degraded sources detected via consistent deviation. Alerts generated.</p>
+    </div>
+    <div>
+      <h3 style="font-size: 0.8em; color: var(--c-red);">Circuit Breaker Conditions</h3>
+      <div class="card" style="padding: 0.5em 0.8em;">
+        <ul class="tiny" style="margin: 0;">
+          <li><strong>No valid rate:</strong> Reject transaction with <code>NoRateAvailable</code></li>
+          <li><strong>Rate drift &gt; threshold:</strong> Reject with <code>RateDrift</code> — client must re-quote</li>
+          <li><strong>Sources &lt; minimum (2):</strong> Circuit breaker OPEN</li>
+          <li><strong>Sudden large move:</strong> Alert + pause automated ops</li>
+        </ul>
+      </div>
+      <p class="tiny muted" style="margin-top: 0.3em;">Staleness: BTC 60s (txn) / 5min (reporting); Fiat 5min (txn) / 1hr (reporting)</p>
+    </div>
+  </div>
+</section>
+
+<!-- Job Orchestration Detail -->
+<section>
+  <h2><span class="cyan">C7</span> Job Orchestration: Handler → Collector → Worker</h2>
+  <p class="small muted">All three revaluation chains use the same <code>obix</code> pattern as interest accrual.</p>
+  <pre style="font-size: 0.42em;"><code>CoreTimeEvent::EndOfDay
+  │
+  ├─ FxRevaluationEndOfDayHandler (fiat IAS 21)
+  │   └─ CollectFiatAccountsForRevaluationJob 
+  │       ├─ Cursor pagination (PAGE_SIZE = 100)
+  │       └─ ProcessRevaluationJob per account → 6100/6200
+  │
+  ├─ BtcFairValueRevaluationEndOfDayHandler (ASU 2023-08)
+  │   └─ CollectBtcAccountsForRevaluationJob
+  │       └─ ProcessBtcFairValueRevaluationJob → 7100/7200
+  │
+  └─ CollateralRevaluationEndOfDayHandler (agent, no P&L)
+      └─ CollectFacilitiesForCollateralRevaluationJob
+          └─ ProcessCollateralRevaluationJob → both-sides entry</code></pre>
+  <div class="callout" style="font-size: 0.65em; margin-top: 0.4em;">
+    <strong>Registration:</strong> <code>outbox.register_event_handler()</code> in FX module's <code>init()</code>, called from <code>LanaApp::init()</code>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════
+     ACT 4 — THE ROADMAP
+     ════════════════════════════════════════════════════ -->
+<section class="section-divider">
+  <div class="section-number">Act 4</div>
+  <h2>The Roadmap</h2>
+  <div class="section-subtitle">6 phases. Each delivers independently useful capability. Build dependencies, not feature flags.</div>
+</section>
+
+<!-- Phase overview -->
+<section>
+  <h2>Implementation Phases</h2>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-amber);">1</div>
+    <div class="phase-content">
+      <div class="phase-title">Rate Storage + Multi-Source Aggregation <span class="tag tag-amber">Foundation</span></div>
+      <div class="phase-desc"><code>exchange_rates</code> table, rate service, Bitfinex/Coinbase/Kraken adapters, median aggregator, per-txn rate recording</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-amber);">2</div>
+    <div class="phase-content">
+      <div class="phase-title">Rate Robustness</div>
+      <div class="phase-desc">Staleness enforcement, tolerance bands, circuit breakers, health monitoring job</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-accent);">3</div>
+    <div class="phase-content">
+      <div class="phase-title">Fiat FX Chart of Accounts + Trading Account <span class="tag tag-accent">Accounting</span></div>
+      <div class="phase-desc">Trading account + gain/loss accounts, fiat conversion template, revaluation (delta method), reconciliation</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-purple);">4</div>
+    <div class="phase-content">
+      <div class="phase-title">Collateral Revaluation <span class="tag tag-purple">BTC Ops</span></div>
+      <div class="phase-desc">Both-sides reval template, EndOfDay handler + collector + worker jobs. Immediate LTV accuracy improvement.</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-purple);">5</div>
+    <div class="phase-content">
+      <div class="phase-title">Segregation Controls + On-Chain Reconciliation</div>
+      <div class="phase-desc">CALA template restrictions, on-chain/ledger recon job, proof-of-reserves attestation, cost basis / lot tracking</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-cyan);">6</div>
+    <div class="phase-content">
+      <div class="phase-title">BTC Fair Value Reval (Platform-Owned)</div>
+      <div class="phase-desc">7100/7200 accounts, separate reval job chain. Needed when platform first owns BTC (treasury, fee income).</div>
+    </div>
+  </div>
+</section>
+
+<!-- Dependencies -->
+<section>
+  <h2>Dependencies &amp; Integration Points</h2>
+  <div class="grid-2">
+    <div>
+      <div class="card card-green" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
+        <p class="smaller" style="margin: 0; font-weight: 600; color: var(--c-green);">Already In Place</p>
+        <ul class="tiny" style="margin: 0.2em 0 0;">
+          <li>CALA ledger (template params, account sets)</li>
+          <li>obix job framework (handler → collector → worker)</li>
+          <li><code>CoreTimeEvent::EndOfDay</code></li>
+          <li>Bitfinex price feed</li>
+          <li><code>CorePriceEvent::PriceUpdated</code></li>
+        </ul>
+      </div>
+      <div class="card card-amber" style="padding: 0.5em 0.8em;">
+        <p class="smaller" style="margin: 0; font-weight: 600; color: var(--c-amber);">Needs Building</p>
+        <ul class="tiny" style="margin: 0.2em 0 0;">
+          <li>Coinbase + Kraken source adapters</li>
+          <li>Rate source adapter trait</li>
+          <li>Custody API integration (for recon job)</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card card-accent" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
+        <p class="smaller" style="margin: 0; font-weight: 600; color: var(--c-accent);">Related Workstreams</p>
+        <ul class="tiny" style="margin: 0.2em 0 0;">
+          <li><strong>WS1 (Generic Money Type):</strong> Not a hard dep — FX works with current types for BTC/USD, but needed for additional pairs</li>
+          <li><strong>Functional currency config:</strong> All FX ops parameterized by <code>functional_currency</code>, not hardcoded USD</li>
+        </ul>
+      </div>
+      <div class="card card-red" style="padding: 0.5em 0.8em;">
+        <p class="smaller" style="margin: 0; font-weight: 600; color: var(--c-red);">External Review Needed</p>
+        <ul class="tiny" style="margin: 0.2em 0 0;">
+          <li>Legal/accounting sign-off on ASU 2023-08 fair value approach before Phase 6</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Closing -->
+<section class="center-slide">
+  <h2>Recap: One Struct → Full FX Infrastructure</h2>
+  <br>
+  <div class="diagram-flow">
+    <div class="diagram-box" style="border-color: var(--c-red); background: var(--c-red-dim); font-size: 0.65em;">
+      <span class="red" style="font-weight: 600;">Today</span><br>
+      <code>PriceOfOneBTC</code><br>
+      1 pair · 1 source · no history
+    </div>
+    <span class="diagram-arrow" style="font-size: 1.8em;">→</span>
+    <div class="diagram-box highlight" style="font-size: 0.65em; min-width: 220px;">
+      <span class="accent" style="font-weight: 600;">Target State</span><br>
+      Multi-pair · Multi-source · Historical<br>
+      Per-txn rates · Trading accounts<br>
+      Auto revaluation · Segregation
+    </div>
+  </div>
+  <br>
+  <div class="grid-3" style="max-width: 700px; margin: 0 auto;">
+    <div class="metric">
+      <div class="value accent">8</div>
+      <div class="label">Components</div>
+    </div>
+    <div class="metric">
+      <div class="value green">6</div>
+      <div class="label">Incremental Phases</div>
+    </div>
+    <div class="metric">
+      <div class="value amber">2</div>
+      <div class="label">Accounting Regimes</div>
+    </div>
+  </div>
+  <br>
+  <p class="small muted" style="text-align: center;">Each phase delivers independently. Phase 1 alone eliminates single-source risk<br>and gives us rate history for the first time.</p>
+</section>
+
+<!-- Q&A -->
+<section class="center-slide">
+  <h2 style="font-size: 2.4em; font-weight: 300;">Questions?</h2>
+  <br>
+  <p class="small muted">Full design doc: <code>workstream-2-fx-infrastructure.md</code></p>
+</section>
+
+</div><!-- /slides -->
+</div><!-- /reveal -->
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script>
+Reveal.initialize({
+  hash: true,
+  width: 1280,
+  height: 720,
+  margin: 0.04,
+  transition: 'fade',
+  transitionSpeed: 'fast',
+  backgroundTransition: 'fade',
+  center: false,
+  controlsTutorial: false,
+});
+</script>
+</body>
+</html>
