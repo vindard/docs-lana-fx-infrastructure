@@ -324,6 +324,8 @@ FX-dependent operations must halt gracefully when reliable rates are unavailable
 
 The current system depends on a single Bitfinex feed. A single-source failure means complete loss of pricing capability. Multi-source aggregation provides resilience, accuracy, and auditability.
 
+See also: [C2 Design Lineage](c2-design-lineage.md) for the analysis and design evolution behind this component.
+
 ### Design
 
 ```
