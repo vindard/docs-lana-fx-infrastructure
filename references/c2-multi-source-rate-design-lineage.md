@@ -1,4 +1,4 @@
-# Component 2: Design Lineage and Analysis
+# Component 2: Multi-Source Rate Design Lineage and Analysis
 
 C2's multi-source rate aggregation design synthesizes patterns from four established oracle and market data architectures. This document traces where each design choice comes from, evaluates robustness, identifies improvement opportunities, and explains what was deliberately excluded given C2's operating context.
 

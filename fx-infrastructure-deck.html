@@ -257,21 +257,25 @@
      ════════════════════════════════════════════════════ -->
 <section>
   <h2>Agenda</h2>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6em;">
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6em;">
     <div class="card card-red">
       <h3 style="color: var(--c-red); margin: 0;">1 &nbsp;The Problem</h3>
       <p class="small muted" style="margin: 0.3em 0 0;">What we have today and why it can't scale</p>
     </div>
+    <div class="card card-amber">
+      <h3 style="color: var(--c-amber); margin: 0;">2 &nbsp;Why It's Required</h3>
+      <p class="small muted" style="margin: 0.3em 0 0;">Compliance, regime separation, custody, resilience</p>
+    </div>
     <div class="card card-accent">
-      <h3 style="margin: 0;">2 &nbsp;The Accounting Reality</h3>
+      <h3 style="margin: 0;">3 &nbsp;Accounting Reality</h3>
       <p class="small muted" style="margin: 0.3em 0 0;">Two regimes that drive every design decision</p>
     </div>
     <div class="card card-purple">
-      <h3 style="color: var(--c-purple); margin: 0;">3 &nbsp;The Architecture</h3>
+      <h3 style="color: var(--c-purple); margin: 0;">4 &nbsp;The Architecture</h3>
       <p class="small muted" style="margin: 0.3em 0 0;">8 components, how they connect</p>
     </div>
-    <div class="card card-green">
-      <h3 style="color: var(--c-green); margin: 0;">4 &nbsp;The Roadmap</h3>
+    <div class="card card-green" style="grid-column: 2;">
+      <h3 style="color: var(--c-green); margin: 0;">5 &nbsp;The Roadmap</h3>
       <p class="small muted" style="margin: 0.3em 0 0;">6 phases, each delivering value incrementally</p>
     </div>
   </div>
@@ -392,10 +396,42 @@ impl PriceOfOneBTC {
 
 
 <!-- ════════════════════════════════════════════════════
-     ACT 2 — ACCOUNTING REALITY
+     ACT 2 — WHY FX INFRASTRUCTURE IS REQUIRED
      ════════════════════════════════════════════════════ -->
 <section class="section-divider">
   <div class="section-number">Act 2</div>
+  <h2>Why FX Infrastructure Is Required</h2>
+  <div class="section-subtitle">A multicurrency lending platform that holds BTC collateral has obligations a spot-rate converter cannot meet.</div>
+</section>
+
+<section>
+  <h2>Four Reasons We Can't Bolt This On Later</h2>
+  <div class="grid-2">
+    <div class="card card-accent" style="padding: 0.6em 0.8em;">
+      <p class="small" style="margin: 0; font-weight: 600; color: var(--c-accent);">Accounting Compliance</p>
+      <p class="tiny" style="margin: 0.3em 0 0;">Fiat foreign-currency balances must be revalued at period-end closing rates (IAS 21 / ASC 830) — requiring historical rate records independent of any transaction. Every cross-currency entry must capture the exact rate used, because that rate becomes the baseline for all future revaluation deltas. Without both, financial statements cannot be produced correctly.</p>
+    </div>
+    <div class="card card-amber" style="padding: 0.6em 0.8em;">
+      <p class="small" style="margin: 0; font-weight: 600; color: var(--c-amber);">BTC and Fiat Are Different Regimes</p>
+      <p class="tiny" style="margin: 0.3em 0 0;">BTC is an intangible asset at fair value (ASU 2023-08). Fiat FX uses closing-rate revaluation with unrealized/realized separation (IAS 21). These require separate account structures, separate revaluation logic, and must never be commingled. Treating BTC-to-USD the same as EUR-to-USD produces incoherent financials.</p>
+    </div>
+    <div class="card card-purple" style="padding: 0.6em 0.8em;">
+      <p class="small" style="margin: 0; font-weight: 600; color: var(--c-purple);">Custodied BTC = Agent Relationship</p>
+      <p class="tiny" style="margin: 0.3em 0 0;">When the platform holds BTC collateral on behalf of borrowers, price movements affect both the asset and obligation equally — no P&L impact. This is legally distinct from BTC the platform owns. Commingling the two, or failing to reconcile on-chain balances against the ledger, creates the kind of segregation failure that brought down Celsius.</p>
+    </div>
+    <div class="card card-red" style="padding: 0.6em 0.8em;">
+      <p class="small" style="margin: 0; font-weight: 600; color: var(--c-red);">Operational Resilience</p>
+      <p class="tiny" style="margin: 0.3em 0 0;">A single price feed with no staleness checks, no circuit breakers, and no fallback means one provider outage or one bad data point can silently corrupt every conversion, LTV calculation, and collateral valuation in the system. Rate infrastructure must be hardened before it underpins accounting entries.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     ACT 3 — ACCOUNTING REALITY
+     ════════════════════════════════════════════════════ -->
+<section class="section-divider">
+  <div class="section-number">Act 3</div>
   <h2>Two Accounting Regimes</h2>
   <div class="section-subtitle">BTC is not a foreign currency. This distinction drives every design decision.</div>
 </section>
@@ -490,10 +526,10 @@ impl PriceOfOneBTC {
 
 
 <!-- ════════════════════════════════════════════════════
-     ACT 3 — THE ARCHITECTURE
+     ACT 4 — THE ARCHITECTURE
      ════════════════════════════════════════════════════ -->
 <section class="section-divider">
-  <div class="section-number">Act 3</div>
+  <div class="section-number">Act 4</div>
   <h2>The Architecture</h2>
   <div class="section-subtitle">8 components that build on each other to form a complete FX system</div>
 </section>
@@ -898,10 +934,10 @@ Dr Unrealized FX Gain $5k | Cr EUR Receivable $5k</code></pre>
 </section>
 
 <!-- ════════════════════════════════════════════════════
-     ACT 4 — THE ROADMAP
+     ACT 5 — THE ROADMAP
      ════════════════════════════════════════════════════ -->
 <section class="section-divider">
-  <div class="section-number">Act 4</div>
+  <div class="section-number">Act 5</div>
   <h2>The Roadmap</h2>
   <div class="section-subtitle">6 phases. Each delivers independently useful capability. Build dependencies, not feature flags.</div>
 </section>
@@ -1036,7 +1072,7 @@ Dr Unrealized FX Gain $5k | Cr EUR Receivable $5k</code></pre>
 <section class="center-slide">
   <h2 style="font-size: 2.4em; font-weight: 300;">Questions?</h2>
   <br>
-  <p class="small muted">Full design doc: <code>workstream-2-fx-infrastructure.md</code></p>
+  <p class="small muted">Full spec: <code>SPEC.md</code> &nbsp;·&nbsp; Summary: <code>README.md</code></p>
 </section>
 
 </div><!-- /slides -->
