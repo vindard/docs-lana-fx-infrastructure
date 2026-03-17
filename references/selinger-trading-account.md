@@ -282,14 +282,43 @@ At any point:
 
 ---
 
-## 12. Key Takeaway
+## 12. Precedent in Other Systems
 
-> You are effectively transforming FX accounting from:
->
-> - a **matching problem** (lots, FIFO, pairing)
->
-> into:
->
-> - a **flow + accumulation problem** (deltas into a residual account)
->
-> This is a **meaningful architectural simplification** with strong theoretical grounding.
+The Selinger analogy is structural rather than direct, but the underlying pattern — an intermediary FX trading account that accumulates conversion differences — is standard practice across treasury and banking systems.
+
+### 12.1 ERP Systems
+
+- **SAP S/4HANA** routes multicurrency postings through FX clearing/trading accounts and accumulates unrealized differences there. SAP's IAS 21 revaluation uses the delta method described in this workstream's spec.
+- **Oracle Financials** uses a "conversion gain/loss" intermediary pattern in its General Ledger for multicurrency transactions.
+- **Microsoft Dynamics 365** has a currency revaluation module that posts through intermediary accounts following the same pattern.
+
+### 12.2 Banking and Treasury Platforms
+
+- **Murex**, **Calypso**, and other treasury management platforms model FX positions through position-keeping accounts that behave exactly like the trading account described here — every conversion flows through, and the running balance represents unrealized P&L.
+- **FIS (Sungard) Quantum** and **Finastra** treasury systems use the same intermediary pattern.
+
+### 12.3 Accounting Standards
+
+IAS 21 does not prescribe the trading account pattern, but the standard's requirement to track unrealized FX differences on monetary items naturally leads to it. The delta method (posting only the incremental difference from the last revaluation) is how SAP implements IAS 21 revaluation in practice.
+
+### 12.4 Double-Entry Tradition
+
+The concept of a "suspense" or "clearing" account as an intermediary is centuries old in double-entry bookkeeping. The FX trading account is a specific instance — a clearing account that captures valuation differences rather than timing differences.
+
+### 12.5 What Is Novel Here
+
+The framing through the Selinger lens as "incremental cost accumulation" is less common. The actual accounting pattern is well-trodden ground. The real value of the approach — eliminating lot-matching complexity by collapsing everything into a flow-and-accumulation problem — is exactly why SAP and similar systems adopted it.
+
+---
+
+## 13. Key Takeaway
+
+You are effectively transforming FX accounting from:
+
+- a **matching problem** (lots, FIFO, pairing)
+
+into:
+
+- a **flow + accumulation problem** (deltas into a residual account)
+
+This is a **meaningful architectural simplification** with strong theoretical grounding and broad industry precedent.
