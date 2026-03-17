@@ -6,6 +6,7 @@
 - [Current State](#current-state)
   - [Price Module (`core/price/`)](#price-module-coreprice)
   - [What's Missing](#whats-missing)
+  - [Why Both Rate History and Per-Transaction Rates?](#why-both-rate-history-and-per-transaction-rates)
 - [Accounting Framework](#accounting-framework)
   - [Fiat FX: IAS 21 / ASC 830](#fiat-fx-ias-21--asc-830)
   - [BTC: FASB ASU 2023-08 (Fair Value Through Net Income)](#btc-fasb-asu-2023-08-fair-value-through-net-income)
@@ -120,6 +121,36 @@ impl PriceOfOneBTC {
 | Collateral mark-to-market (accounting entries) | Not implemented (LTV calc exists but doesn't post entries) |
 | Cost basis / lot tracking for BTC | Not implemented |
 | Segregation controls for custodied BTC | Not implemented |
+
+### Why Both Rate History and Per-Transaction Rates?
+
+The current `PriceOfOneBTC` module has **neither** historical rate storage nor per-transaction rate recording. It fetches a live spot rate and discards it. Moving to proper FX infrastructure requires building both capabilities — they serve fundamentally different purposes and neither replaces the other.
+
+**Rate history (Component 1) answers: "What was the rate at time T?"**
+
+- **Revaluation** — closing rates must be captured at end-of-day for period-end revaluation (IAS 21 / ASU 2023-08), even on days when no transaction occurred
+- **Rate quoting** — UI display, customer quotes, and LTV calculations all need rates before any transaction exists
+- **Source health analysis** — tracking which providers were available and their deviation patterns requires a continuous history, not just transaction snapshots
+- **Efficient lookups** — an indexed rate table is far cheaper to query than scanning all transactions to find the nearest rate
+- **CLOSING vs SPOT distinction** — the closing rate is a specific end-of-day capture used for revaluation; it exists independently of any transaction
+
+**Per-transaction recording (Component 3) answers: "What rate produced these specific entry amounts?"**
+
+- **Authoritative audit trail** — the exact rate used for a transaction, not interpolated from nearby history snapshots
+- **Locked/agreed rates** — negotiated or locked rates that intentionally differ from any market rate in the history table
+- **IAS 21 historical rate baseline** — revaluation deltas are computed from the original transaction rate, which must be stored with the transaction
+- **ASU 2023-08 initial carrying value** — the fair value at acquisition establishes the cost basis for subsequent remeasurement
+
+**Cross-validation:** comparing the two catches anomalies — was the rate used for transaction X reasonable given what the market was doing at that time?
+
+| Question | Answered by |
+|----------|-------------|
+| What rate was used for transaction X? | Transaction metadata |
+| What was the BTC rate at 3pm on March 5? | Rate history table |
+| What closing rate should the revaluation job use? | Rate history table |
+| What rate should we show the customer for a quote? | Rate history table |
+| Was the rate used for transaction X reasonable? | Both (cross-validation) |
+| Which rate sources were healthy last Tuesday? | Rate history table |
 
 ## Accounting Framework
 
