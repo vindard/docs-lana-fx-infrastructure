@@ -744,52 +744,70 @@ impl PriceOfOneBTC {
 <section class="section-divider">
   <div class="section-number">Act 5</div>
   <h2>The Roadmap</h2>
-  <div class="section-subtitle">6 phases. Each delivers independently useful capability. Build dependencies, not feature flags.</div>
+  <div class="section-subtitle">3 independent groups, 5 phases + deferred. Build what delivers value first — let infrastructure emerge from real needs.</div>
 </section>
 
 <!-- Phase overview -->
 <section>
   <h2>Implementation Phases</h2>
+  <p class="smaller muted" style="margin: 0 0 0.1em;">All groups are independent — no cross-group dependencies. Can run in any order or in parallel.</p>
+  <p class="smaller muted" style="margin: 0.4em 0 0.3em; font-weight: 600;">Group A — Audit Trail <span style="opacity: 0.6;">(independent, any workstream)</span></p>
   <div class="phase-row">
-    <div class="phase-marker" style="background: var(--c-amber);">1</div>
+    <div class="phase-marker" style="background: var(--c-amber);">A</div>
     <div class="phase-content">
-      <div class="phase-title">Rate Storage + Multi-Source Aggregation <span class="tag tag-amber">Foundation</span></div>
-      <div class="phase-desc"><code>exchange_rates</code> table, rate service, Bitfinex/Coinbase/Kraken adapters, median aggregator, per-txn rate recording</div>
+      <div class="phase-title">Rate-Per-Transaction Recording <span class="tag tag-amber">Audit Trail</span></div>
+      <div class="phase-desc">Rate metadata on every CALA entry using existing <code>PriceOfOneBTC</code> feed. No new tables or services — can be bundled into Group B or done separately.</div>
     </div>
   </div>
-  <div class="phase-row">
-    <div class="phase-marker" style="background: var(--c-amber);">2</div>
-    <div class="phase-content">
-      <div class="phase-title">Rate Robustness</div>
-      <div class="phase-desc">Staleness enforcement, tolerance bands, circuit breakers, health monitoring job</div>
-    </div>
-  </div>
+  <p class="smaller muted" style="margin: 0.6em 0 0.3em; font-weight: 600;">Group B — Fiat FX Accounting <span style="opacity: 0.6;">(phases run in parallel)</span></p>
   <div class="phase-row">
     <div class="phase-marker" style="background: var(--c-accent);">3</div>
     <div class="phase-content">
-      <div class="phase-title">Fiat FX Chart of Accounts + Trading Account <span class="tag tag-accent">Accounting</span></div>
-      <div class="phase-desc">Trading account + gain/loss accounts, fiat conversion template, revaluation (delta method), reconciliation</div>
+      <div class="phase-title">Fiat FX Trading Account + Realized Gain/Loss <span class="tag tag-accent">Per-Txn</span></div>
+      <div class="phase-desc">Trading account (3200), realized gain/loss (4200/5100), conversion template. No jobs — fires inline on each fiat conversion.</div>
     </div>
   </div>
   <div class="phase-row">
-    <div class="phase-marker" style="background: var(--c-purple);">4</div>
+    <div class="phase-marker" style="background: var(--c-accent);">4</div>
     <div class="phase-content">
-      <div class="phase-title">Collateral Revaluation <span class="tag tag-purple">BTC Ops</span></div>
-      <div class="phase-desc">Both-sides reval template, EndOfDay handler + collector + worker jobs. Immediate LTV accuracy improvement.</div>
+      <div class="phase-title">Fiat FX Revaluation (Unrealized) <span class="tag tag-accent">Period-End</span></div>
+      <div class="phase-desc">Unrealized gain/loss (6100/6200), delta method revaluation, EndOfDay job chain.</div>
+    </div>
+  </div>
+  <p class="smaller muted" style="margin: 0.6em 0 0.3em; font-weight: 600;">Group C — BTC Revaluation <span style="opacity: 0.6;">(parallel; Phase 5 depends on Phase 2)</span></p>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-amber);">2</div>
+    <div class="phase-content">
+      <div class="phase-title">Collateral Revaluation <span class="tag tag-amber">LTV Accuracy</span></div>
+      <div class="phase-desc">Both-sides reval template (no P&amp;L), EndOfDay job chain, existing price feed. Establishes collateral-vs-owned BTC boundary.</div>
     </div>
   </div>
   <div class="phase-row">
     <div class="phase-marker" style="background: var(--c-purple);">5</div>
     <div class="phase-content">
-      <div class="phase-title">Segregation Controls + On-Chain Reconciliation</div>
-      <div class="phase-desc">CALA template restrictions, on-chain/ledger recon job, proof-of-reserves attestation, cost basis / lot tracking</div>
+      <div class="phase-title">BTC Fair Value Revaluation <span class="tag tag-purple">BTC Ops</span></div>
+      <div class="phase-desc">7100/7200 accounts, separate reval job chain. <strong>Depends on Phase 2</strong> (collateral boundary). Needs ASU 2023-08 sign-off.</div>
     </div>
   </div>
   <div class="phase-row">
-    <div class="phase-marker" style="background: var(--c-cyan);">6</div>
+    <div class="phase-marker" style="background: var(--c-muted); opacity: 0.7;">D</div>
     <div class="phase-content">
-      <div class="phase-title">BTC Fair Value Reval (Platform-Owned)</div>
-      <div class="phase-desc">7100/7200 accounts, separate reval job chain. Needed when platform first owns BTC (treasury, fee income).</div>
+      <div class="phase-title" style="color: var(--c-muted);">Rate Storage + Multi-Source Aggregation + Robustness</div>
+      <div class="phase-desc">Full <code>exchange_rates</code> table, multi-provider (Bitfinex/Coinbase/Kraken), staleness enforcement, circuit breakers. Build when operational needs demand it.</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-muted); opacity: 0.7;">D</div>
+    <div class="phase-content">
+      <div class="phase-title" style="color: var(--c-muted);">Regulatory and Reporting</div>
+      <div class="phase-desc">Audit trail enhancements, methodology docs, ASC 830 cash flow, proof of reserves. Consumers come after producers.</div>
+    </div>
+  </div>
+  <div class="phase-row">
+    <div class="phase-marker" style="background: var(--c-muted); opacity: 0.7;">D</div>
+    <div class="phase-content">
+      <div class="phase-title" style="color: var(--c-muted);">Segregation Controls + On-Chain Reconciliation</div>
+      <div class="phase-desc">CALA template restrictions, on-chain/ledger recon job, proof-of-reserves attestation, cost basis / lot tracking. Enforcement layer on top of Phase 2 collateral accounting.</div>
     </div>
   </div>
 </section>
@@ -829,7 +847,7 @@ impl PriceOfOneBTC {
       <div class="card card-red" style="padding: 0.5em 0.8em;">
         <p class="smaller" style="margin: 0; font-weight: 600; color: var(--c-red);">External Review Needed</p>
         <ul class="tiny" style="margin: 0.2em 0 0;">
-          <li>Legal/accounting sign-off on ASU 2023-08 fair value approach before Phase 6</li>
+          <li>Legal/accounting sign-off on ASU 2023-08 fair value approach before BTC fair value revaluation (C5 / Phase 5)</li>
         </ul>
       </div>
     </div>
@@ -861,8 +879,8 @@ impl PriceOfOneBTC {
       <div class="label">Components</div>
     </div>
     <div class="metric">
-      <div class="value green">6</div>
-      <div class="label">Incremental Phases</div>
+      <div class="value green">3</div>
+      <div class="label">Independent Groups</div>
     </div>
     <div class="metric">
       <div class="value amber">2</div>
@@ -870,7 +888,7 @@ impl PriceOfOneBTC {
     </div>
   </div>
   <br>
-  <p class="small muted" style="text-align: center;">Each phase delivers independently. Phase 1 alone eliminates single-source risk<br>and gives us rate history for the first time.</p>
+  <p class="small muted" style="text-align: center;">Demand-driven ordering. All groups run independently.<br>Group A alone establishes a complete audit trail — no new infrastructure required.</p>
 </section>
 
 <!-- Q&A -->

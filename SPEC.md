@@ -62,12 +62,16 @@
   - [Hyperinflation (IAS 29)](#hyperinflation-ias-29)
   - [Segregation and Proof of Reserves](#segregation-and-proof-of-reserves)
 - [Implementation Order](#implementation-order)
-  - [Phase 1: Rate Storage + Multi-Source Aggregation](#phase-1-rate-storage--multi-source-aggregation-foundation)
-  - [Phase 2: Rate Robustness](#phase-2-rate-robustness)
-  - [Phase 3: Fiat FX Chart of Accounts + Trading Account](#phase-3-fiat-fx-chart-of-accounts--trading-account)
-  - [Phase 4: Collateral Revaluation](#phase-4-collateral-revaluation)
-  - [Phase 5: Segregation Controls + On-Chain Reconciliation](#phase-5-segregation-controls--on-chain-reconciliation)
-  - [Phase 6: BTC Fair Value Revaluation](#phase-6-btc-fair-value-revaluation-platform-owned-btc)
+  - [Group A: Rate-Per-Transaction Recording (independent)](#group-a-rate-per-transaction-recording-independent)
+  - [Group B: Fiat FX Accounting (parallel)](#group-b-fiat-fx-accounting-parallel)
+    - [Phase 3: Fiat FX Trading Account + Realized Gain/Loss](#phase-3-fiat-fx-trading-account--realized-gainloss)
+    - [Phase 4: Fiat FX Revaluation (Unrealized)](#phase-4-fiat-fx-revaluation-unrealized)
+  - [Group C: BTC Revaluation (parallel; Phase 5 depends on Phase 2)](#group-c-btc-revaluation-parallel-phase-5-depends-on-phase-2)
+    - [Phase 2: Collateral Revaluation](#phase-2-collateral-revaluation)
+    - [Phase 5: BTC Fair Value Revaluation](#phase-5-btc-fair-value-revaluation)
+  - [Deferred: Exchange Rate Storage + Multi-Source Aggregation](#deferred-exchange-rate-storage--multi-source-aggregation)
+  - [Deferred: Regulatory and Reporting](#deferred-regulatory-and-reporting)
+  - [Deferred: Segregation Controls + On-Chain Reconciliation](#deferred-segregation-controls--on-chain-reconciliation)
 - [Dependencies](#dependencies)
 
 ## Problem Statement
@@ -1339,46 +1343,74 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 
 ## Implementation Order
 
-Since the system supports configurable functional currencies, fiat FX infrastructure (including the trading account) is core — not deferred. The phasing below reflects build dependencies, not "when it becomes needed."
+The ordering follows demand-driven, emergent design principles: build what delivers value first and let infrastructure emerge from real consumer needs. The existing `PriceOfOneBTC` Bitfinex feed is sufficient to start — dedicated rate storage, multi-source aggregation, and robustness controls are built when operational needs demand them, not upfront.
 
-### Phase 1: Rate Storage + Multi-Source Aggregation (Foundation)
-- Create `exchange_rates` table and migration
-- Build `ExchangeRateService` with rate lookup (direct, inverse, cross-rate), parameterized by configurable `functional_currency`
-- Implement rate source adapter trait and Bitfinex adapter (wrapping existing feed)
-- Add Coinbase and Kraken adapters
-- Build aggregator (median) with tolerance band filtering
-- Store rate used on each cross-currency and single-currency non-functional-currency transaction (metadata)
+**Groups A, B, and C are fully independent of each other** — no cross-group dependencies. They can be executed in any order or in parallel. Within each group, phases are also independent unless explicitly noted (Phase 5 depends on Phase 2 within Group C).
 
-### Phase 2: Rate Robustness
-- Implement rate staleness enforcement
-- Add tolerance band configuration per currency pair
-- Build circuit breaker logic
-- Deploy rate health monitoring job
+### Group A: Rate-Per-Transaction Recording (independent)
 
-### Phase 3: Fiat FX Chart of Accounts + Trading Account
-- Add fiat FX-specific accounts (trading account, realized/unrealized gain/loss, rounding differences), parameterized by `functional_currency`
-- Create fiat FX trading account template for fiat-to-fiat conversions
-- Route all fiat FX conversions through trading account
-- Realized gain/loss posting on position closure
-- Build fiat FX revaluation (delta method) for foreign-currency balances
-- Build reconciliation job for revaluation verification
+- Store rate metadata on CALA entries for every cross-currency and single-currency non-functional-currency transaction, using the existing `PriceOfOneBTC` feed
+- No new tables or services required — uses existing price feed infrastructure
+- Immediate audit trail value: every entry carries the rate that produced it
+- **Independent of all other groups and phases** — no downstream consumers, no upstream dependencies. Can be picked up by any workstream or bundled into Group B as a parallel track.
 
-### Phase 4: Collateral Revaluation
-- Build collateral revaluation template (both-sides, no P&L)
-- Create `CollateralRevaluationEndOfDayHandler` + collector + worker jobs triggered by `CoreTimeEvent::EndOfDay`
-- Post functional-currency-denominated adjustment entries
-- Delivers immediate value for LTV monitoring accuracy
+### Group B: Fiat FX Accounting (parallel)
 
-### Phase 5: Segregation Controls + On-Chain Reconciliation
-- Implement CALA template restrictions on collateral accounts
-- Build on-chain/ledger reconciliation job
-- Add proof-of-reserves attestation entries
+Independent of Groups A and C. Phases 3 and 4 are also independent of each other — no shared accounts, no shared templates, no ordering constraints. They can be built in any order or in parallel.
+
+#### Phase 3: Fiat FX Trading Account + Realized Gain/Loss
+
+- **C4 — Trading Account + Realized FX Accounts**: Add trading account (3200), rounding differences (3210), realized FX gain (4200), realized FX loss (5100), parameterized by `functional_currency`.
+- **C4 — Fiat FX Conversion Template**: Create `fiat_fx_conversion_via_trading` template, route all fiat FX conversions through the trading account, post realized gain/loss on position closure.
+- No jobs required — fires inline on each fiat conversion.
+- Immediate value: every fiat FX conversion is properly routed and realized gains/losses are captured at transaction time.
+
+#### Phase 4: Fiat FX Revaluation (Unrealized)
+
+- **C4 (remainder) — Unrealized FX Accounts**: Add unrealized FX gain (6100) and unrealized FX loss (6200).
+- **C5 (fiat) — Fiat FX Revaluation**: Delta method revaluation for foreign-currency balances, posting to 6100/6200. Reconciliation job for revaluation verification.
+- **C7 — Fiat FX EndOfDay Job Chain**: Fiat FX revaluation handler + collector + worker jobs, added to the EndOfDay trigger.
+- Revalues any account denominated in a non-functional currency — no dependency on the collateral boundary or the trading account.
+- **Note**: A minimal rate storage capability (subset of C1) will emerge here as needed for fiat closing rates — just enough to support the revaluation jobs.
+
+### Group C: BTC Revaluation (parallel; Phase 5 depends on Phase 2)
+
+Independent of Groups A and B. Phases 2 and 5 can start in parallel, but **Phase 5 depends on Phase 2**: the BTC fair value collector must exclude collateral accounts, so the collateral-vs-owned boundary established in Phase 2 must be in place before Phase 5 ships.
+
+#### Phase 2: Collateral Revaluation
+
+- **C6 (partial) — Collateral Revaluation Template**: Both-sides revaluation template (`collateral_revalue`) for custodied BTC — no P&L impact (agent relationship). Posts functional-currency-denominated adjustments to per-facility collateral and obligation accounts.
+- **C7 (minimal) — Collateral EndOfDay Job Chain**: `CollateralRevaluationEndOfDayHandler` + collector + worker jobs triggered by `CoreTimeEvent::EndOfDay`. Uses existing `PriceOfOneBTC` feed for closing rate.
+- Simplest revaluation — one template, one job chain, no new CoA accounts. Establishes the collateral-vs-owned BTC boundary that Phase 5 depends on.
+- Immediate value: LTV monitoring accuracy for the existing lending business.
+
+#### Phase 5: BTC Fair Value Revaluation
+
+- **C5 (BTC) — BTC Fair Value Revaluation**: Add BTC Fair Value Gain/Loss accounts (7100/7200). BTC fair value revaluation job chain (separate from fiat FX). The collector excludes collateral accounts (boundary established in Phase 2).
+- **C7 — BTC Fair Value EndOfDay Job Chain**: BTC fair value revaluation handler + collector + worker jobs, added to the EndOfDay trigger alongside existing chains.
+- **Depends on**: Phase 2 — collateral boundary must exist so the collector knows what to exclude. No dependency on Group A, Phase 3, or Phase 4.
+- Needed as soon as the platform owns any BTC (treasury, fee income). Requires ASU 2023-08 compliance review.
+
+### Deferred: Exchange Rate Storage + Multi-Source Aggregation
+
+- Full `exchange_rates` table, `ExchangeRateService` with historical lookups, inverse/cross-rate triangulation
+- Rate source adapter trait, Coinbase and Kraken adapters, median aggregator with tolerance band filtering
+- Staleness enforcement, tolerance band configuration per currency pair, circuit breaker logic
+- Rate health monitoring job
+- Build when operational resilience becomes a priority or multi-pair support is needed
+
+### Deferred: Regulatory and Reporting
+
+- Audit trail enhancements, rate methodology documentation
+- ASC 830 cash flow statement translation effects
+- Depends on the core infrastructure components being in place
+
+### Deferred: Segregation Controls + On-Chain Reconciliation
+
+- CALA template restrictions on collateral accounts (ledger-level enforcement)
+- On-chain/ledger reconciliation job, proof-of-reserves attestation entries
 - Cost basis / lot tracking for collateral liquidation
-
-### Phase 6: BTC Fair Value Revaluation (Platform-Owned BTC)
-- Add BTC Fair Value Gain/Loss accounts (7100/7200)
-- Build BTC fair value revaluation job chain (separate from fiat FX)
-- Needed as soon as the platform owns any BTC (treasury, fee income)
+- These are enforcement and verification layers on top of the collateral accounting established in Phase 2 (collateral revaluation) — they prevent operational errors and satisfy regulatory attestation, but don't block the accounting from being correct
 
 ## Dependencies
 
@@ -1386,6 +1418,6 @@ Since the system supports configurable functional currencies, fiat FX infrastruc
 - **CALA**: Transaction metadata support for storing rates. Template parameterization for currency (already supported but not used). Account permissions for segregation controls.
 - **Jobs framework** (`obix`): Already in place. FX jobs follow the established handler → collector → worker pattern used by interest accrual and obligation processing.
 - **Time events**: `CoreTimeEvent::EndOfDay` already exists and triggers daily operations. FX revaluation hooks into the same event.
-- **Price feeds**: Current Bitfinex integration needs to be extended to write closing rates to the rate table. `CorePriceEvent::PriceUpdated` can trigger high-frequency LTV monitoring. Additional source adapters (Coinbase, Kraken) need to be implemented.
+- **Price feeds**: The existing Bitfinex `PriceOfOneBTC` feed is sufficient for Group A, Phase 2, and Phase 5 (rate-per-transaction recording, collateral revaluation, BTC fair value). Closing rates for fiat FX revaluation (Phase 4) may require a minimal persistence layer. Additional source adapters (Coinbase, Kraken) are deferred until operational resilience demands them. `CorePriceEvent::PriceUpdated` can trigger high-frequency LTV monitoring.
 - **ASU 2023-08 compliance review**: Legal/accounting team should confirm the fair value treatment approach before implementation of BTC revaluation entries.
-- **Custody integration**: On-chain balance queries needed for the reconciliation job in Phase 4. Requires API access to the custody solution.
+- **Custody integration**: On-chain balance queries needed for the deferred on-chain/ledger reconciliation job (C6 remainder). Requires API access to the custody solution.

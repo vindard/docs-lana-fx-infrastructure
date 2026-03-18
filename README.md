@@ -64,11 +64,15 @@ The above components collectively satisfy audit trail requirements, rate methodo
 
 ## Implementation Phases
 
-| Phase | What | Why This Order |
-|-------|------|----------------|
-| **1** | Rate storage + multi-source aggregation + per-transaction rate recording | Foundation — everything else depends on reliable, persisted rates |
-| **2** | Staleness enforcement, tolerance bands, circuit breakers, health monitoring | Hardens the rate infrastructure before it's used for accounting entries |
-| **3** | Fiat FX chart of accounts, trading account, revaluation (delta method) | Core accounting machinery for any instance with a non-USD functional currency |
-| **4** | Collateral revaluation (both-sides, no P&L) | Immediate value for LTV monitoring accuracy |
-| **5** | Segregation controls, on-chain reconciliation, proof of reserves | Regulatory and fiduciary requirements for custodied BTC |
-| **6** | BTC fair value revaluation (platform-owned BTC) | Needed once the platform holds any BTC as principal (treasury, fee income) |
+All groups are independent — no cross-group dependencies. They can run in any order or in parallel.
+
+| Group | Phase | What | Dependencies |
+|-------|-------|------|--------------|
+| **A** *(independent)* | | Rate-per-transaction recording (C3) | None — can be picked up by any workstream or bundled into B |
+| **B** *(parallel)* | **3** | Fiat FX trading account + realized gain/loss (C4) | None — fires inline on each conversion, no jobs |
+| | **4** | Fiat FX revaluation, unrealized (C4 remainder, C5 fiat, C7) | None — period-end mark-to-market of foreign-currency balances |
+| **C** *(parallel)* | **2** | Collateral revaluation (C6 partial, C7 minimal) | None — one template, one job chain, immediate LTV accuracy |
+| | **5** | BTC fair value revaluation (C5 BTC, C7) | **Phase 2** — collateral boundary must exist. Also needs ASU 2023-08 sign-off |
+| **Deferred** | Rate storage + multi-source aggregation + robustness (C1, C2) | Full historical storage and multi-provider resilience — build when operational needs demand it |
+| **Deferred** | Regulatory and reporting (C8) | Reporting capabilities that consume the infrastructure built above |
+| **Deferred** | Segregation controls + on-chain reconciliation (C6 remainder) | Enforcement/verification layers on top of Phase 2 collateral accounting — build when regulatory attestation demands it |
