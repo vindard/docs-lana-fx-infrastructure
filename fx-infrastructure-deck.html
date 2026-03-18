@@ -82,7 +82,6 @@
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em; }
   .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8em; }
   .grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 1em; }
-  .grid-1-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 1em; }
 
   /* ── Lists ── */
   .reveal ul, .reveal ol { margin-left: 0; }
@@ -201,37 +200,9 @@
   .phase-content .phase-title { font-weight: 600; color: #fff; margin-bottom: 0.15em; }
   .phase-content .phase-desc { color: var(--c-text-muted); font-size: 0.9em; }
 
-  /* ── VS Layout ── */
-  .vs-divider {
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.7em; font-weight: 700; color: var(--c-text-muted);
-    margin: 0.3em 0;
-  }
-
-  /* ── Progress indicator ── */
-  .progress-dots {
-    display: flex; gap: 0.4em; justify-content: center; margin-bottom: 1em;
-  }
-  .progress-dots .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: rgba(255,255,255,0.15);
-  }
-  .progress-dots .dot.active { background: var(--c-accent); }
-  .progress-dots .dot.done { background: var(--c-green); }
-
-  /* ── Icon-like circles ── */
-  .icon-circle {
-    width: 48px; height: 48px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.2em; margin-bottom: 0.5em;
-  }
-
   /* ── Slide-specific overrides ── */
   .title-slide h1 { font-size: 2.6em; margin-bottom: 0.1em; }
   .title-slide .subtitle { font-size: 0.8em; color: var(--c-text-muted); font-weight: 300; }
-
-  /* Animated reveal helpers */
-  .reveal .fragment.semi-fade-out.visible { opacity: 0.35; }
 
   /* Override reveal's default centering */
   .reveal .slides > section > section { padding: 20px 50px; }
@@ -493,37 +464,6 @@ impl PriceOfOneBTC {
   </div>
 </section>
 
-<!-- Why both rate history and per-txn -->
-<section>
-  <h2>Why We Need <em>Both</em> Rate History and Per-Transaction Rates</h2>
-  <p class="small muted">Today's <code>PriceOfOneBTC</code> has neither. Building proper FX requires both — they serve fundamentally different purposes.</p>
-  <div class="grid-2" style="margin-top: 0.4em;">
-    <div class="card card-accent" style="padding: 0.5em 0.8em;">
-      <p class="small" style="margin: 0; font-weight: 600;">"What was the rate at time T?"</p>
-      <p class="tiny muted" style="margin: 0;">→ Rate History Table</p>
-      <ul class="tiny" style="margin: 0.3em 0 0;">
-        <li>Closing rates for revaluation (even on no-txn days)</li>
-        <li>Rate quoting before any transaction exists</li>
-        <li>Source health analysis</li>
-        <li>Efficient indexed lookups</li>
-      </ul>
-    </div>
-    <div class="card card-purple" style="padding: 0.5em 0.8em;">
-      <p class="small" style="margin: 0; font-weight: 600;">"What rate produced these amounts?"</p>
-      <p class="tiny muted" style="margin: 0;">→ Transaction Metadata</p>
-      <ul class="tiny" style="margin: 0.3em 0 0;">
-        <li>Authoritative audit trail (exact, not interpolated)</li>
-        <li>Locked/agreed rates that differ from market</li>
-        <li>IAS 21 historical rate baseline for reval deltas</li>
-        <li>ASU 2023-08 initial carrying value</li>
-      </ul>
-    </div>
-  </div>
-  <div class="callout fragment" style="font-size: 0.65em; margin-top: 0.4em;">
-    <strong>Cross-validation:</strong> Comparing rate history against per-transaction rates catches anomalies — "Was the rate used for transaction X reasonable given market conditions?"
-  </div>
-</section>
-
 
 <!-- ════════════════════════════════════════════════════
      ACT 4 — THE ARCHITECTURE
@@ -622,8 +562,9 @@ impl PriceOfOneBTC {
         <ul class="tiny" style="margin: 0.2em 0 0;">
           <li>BTC staleness: 60s (txn) / 5min (reporting)</li>
           <li>Fiat staleness: 5min (txn) / 1hr (reporting)</li>
-          <li>Circuit breaker when sources < minimum</li>
-          <li>Rate drift detection on pending ops</li>
+          <li>Tolerance bands: BTC 2%, fiat 0.5% from median</li>
+          <li>Circuit breaker when sources &lt; 2</li>
+          <li>Rate drift detection → client must re-quote</li>
         </ul>
       </div>
     </div>
@@ -657,22 +598,6 @@ impl PriceOfOneBTC {
       </div>
       <p class="tiny muted" style="margin-top: 0.3em;">Trading account running balance = cumulative unrealized FX gain/loss. BTC <strong>never</strong> flows through this account.</p>
     </div>
-  </div>
-</section>
-
-<!-- BTC Never in Trading Account -->
-<section>
-  <h2>Critical: BTC Never Flows Through Trading Account</h2>
-  <table>
-    <thead><tr><th>If BTC Used Trading Account</th><th>Problem</th></tr></thead>
-    <tbody>
-      <tr><td>Same account balance</td><td>ASU 2023-08 (fair value) + IAS 21 (closing rate) = incoherent</td></tr>
-      <tr><td>Net position: +USD -BTC -EUR</td><td>Mixes intangible asset + FX exposure (no accounting meaning)</td></tr>
-      <tr><td>Single P&L account</td><td>Can't separate FX gains from fair value adjustments for disclosure</td></tr>
-    </tbody>
-  </table>
-  <div class="callout" style="margin-top: 0.5em;">
-    <strong>Separate routing:</strong> Fiat → Trading Account (3200). BTC → Direct fair value (7100/7200).
   </div>
 </section>
 
@@ -770,45 +695,7 @@ impl PriceOfOneBTC {
          └── Collect active facilities with collateral → Process per facility
              → <span style="color: var(--c-green);">Both-sides entry</span> (asset + liability move together)
              → <span style="color: var(--c-text-muted);">No P&L, for LTV monitoring + regulatory reporting</span></code></pre>
-  <p class="tiny muted">All three follow the established handler → collector → worker pattern (obix crate). Same pattern as interest accrual.</p>
-</section>
-
-<!-- Revaluation Methods Detail -->
-<section>
-  <h2>Revaluation Methods: Delta vs Full Reversal</h2>
-  <div class="grid-2">
-    <div class="card card-accent" style="padding: 0.6em 0.8em;">
-      <h3 style="color: var(--c-accent); margin-top: 0; font-size: 0.9em;">Delta Method <span class="tag tag-green">Recommended</span></h3>
-      <p class="tiny muted" style="margin: 0.2em 0 0.4em;">Post only incremental difference from last revaluation</p>
-      <pre style="font-size: 0.5em; margin: 0.4em 0;"><code>// Jan 31: original rate 1.10, closing 1.12
-adjustment = balance × (1.12 - 1.10) = $2,000
-Dr EUR Receivable $2k | Cr Unrealized FX Gain $2k
-
-// Feb 28: closing 1.15  
-adjustment = balance × (1.15 - 1.12) = $3,000
-Dr EUR Receivable $3k | Cr Unrealized FX Gain $3k</code></pre>
-      <ul class="tiny" style="margin: 0.3em 0 0;">
-        <li>✓ No reversals needed</li>
-        <li>✓ Idempotent (can re-run safely)</li>
-        <li>✓ Clean mid-period settlements</li>
-        <li>✓ Used by SAP S/4HANA</li>
-      </ul>
-    </div>
-    <div class="card" style="padding: 0.6em 0.8em;">
-      <h3 style="margin-top: 0; font-size: 0.9em;">Full Reversal Method</h3>
-      <p class="tiny muted" style="margin: 0.2em 0 0.4em;">Post entry, auto-reverse on first day of next period</p>
-      <pre style="font-size: 0.5em; margin: 0.4em 0;"><code>// Feb 28 (revaluation)
-Dr EUR Receivable $5k | Cr Unrealized FX Gain $5k
-
-// Mar 1 (auto-reversal)
-Dr Unrealized FX Gain $5k | Cr EUR Receivable $5k</code></pre>
-      <ul class="tiny" style="margin: 0.3em 0 0;">
-        <li>• Higher journal volume</li>
-        <li>• Complex mid-period settlements</li>
-        <li>• Risk of orphaned reversals</li>
-      </ul>
-    </div>
-  </div>
+  <p class="tiny muted">All three follow the established handler → collector → worker pattern (obix crate). Same pattern as interest accrual. Registered via <code>outbox.register_event_handler()</code> in FX module's <code>init()</code>.</p>
 </section>
 
 <!-- C6: Collateral -->
@@ -845,93 +732,11 @@ Dr Unrealized FX Gain $5k | Cr EUR Receivable $5k</code></pre>
       <strong>Proof of reserves:</strong> Periodic reconciliation job compares on-chain custody wallet balances against ledger totals. Discrepancies alert immediately.
     </div>
   </div>
-</section>
-
-<!-- Cost Basis and Lot Tracking -->
-<section>
-  <h2><span class="purple">C6b</span> Cost Basis & Lot Tracking</h2>
-  <div class="grid-2">
-    <div>
-      <pre><code>struct CollateralLot {
-    facility_id: FacilityId,
-    deposit_timestamp: DateTime<Utc>,
-    btc_amount: Satoshis,
-    cost_basis: FunctionalCurrencyAmount,
-    rate_at_deposit: Decimal,
-}</code></pre>
-      <p class="small muted" style="margin-top: 0.3em;">Natural lot identification via per-facility deposits. No FIFO/LIFO assumptions needed.</p>
-    </div>
-    <div>
-      <div class="card" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
-        <p class="tiny" style="margin: 0; font-weight: 600; color: var(--c-accent);">Lot Identification Strategy</p>
-        <ul class="tiny" style="margin: 0.2em 0 0;">
-          <li><strong>Per-facility cost basis:</strong> Each facility's collateral tracked separately</li>
-          <li><strong>Specific identification:</strong> Facility ID + deposit timestamp + amount</li>
-          <li><strong>Multiple deposits:</strong> Each deposit is a separate lot (oldest-first liquidation)</li>
-        </ul>
-      </div>
-      <div class="callout" style="font-size: 0.6em;">
-        <strong>Tax reporting:</strong> Cost basis needed for liquidation events regardless of agent relationship.
-      </div>
-    </div>
+  <div class="callout" style="font-size: 0.6em; margin-top: 0.3em;">
+    <strong>Cost basis:</strong> Each deposit is a separate lot (facility ID + timestamp). Per-facility tracking — no FIFO/LIFO assumptions. Needed for tax reporting on liquidation events.
   </div>
 </section>
 
-<!-- Rate Safety: Tolerance Bands & Circuit Breakers -->
-<section>
-  <h2><span class="cyan">C2b</span> Rate Safety: Tolerance Bands & Circuit Breakers</h2>
-  <div class="grid-2">
-    <div>
-      <h3 style="font-size: 0.8em; color: var(--c-amber);">Tolerance Band Filtering</h3>
-      <div class="card" style="padding: 0.5em 0.8em; margin-bottom: 0.4em;">
-        <p class="tiny" style="margin: 0;">Each source rate compared to median. Outliers excluded.</p>
-        <table style="margin: 0.3em 0 0; font-size: 0.85em;">
-          <thead><tr><th>Pair</th><th>Threshold</th></tr></thead>
-          <tbody>
-            <tr><td>BTC/USD</td><td>2%</td></tr>
-            <tr><td>EUR/USD</td><td>0.5%</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="tiny muted">Degraded sources detected via consistent deviation. Alerts generated.</p>
-    </div>
-    <div>
-      <h3 style="font-size: 0.8em; color: var(--c-red);">Circuit Breaker Conditions</h3>
-      <div class="card" style="padding: 0.5em 0.8em;">
-        <ul class="tiny" style="margin: 0;">
-          <li><strong>No valid rate:</strong> Reject transaction with <code>NoRateAvailable</code></li>
-          <li><strong>Rate drift &gt; threshold:</strong> Reject with <code>RateDrift</code> — client must re-quote</li>
-          <li><strong>Sources &lt; minimum (2):</strong> Circuit breaker OPEN</li>
-          <li><strong>Sudden large move:</strong> Alert + pause automated ops</li>
-        </ul>
-      </div>
-      <p class="tiny muted" style="margin-top: 0.3em;">Staleness: BTC 60s (txn) / 5min (reporting); Fiat 5min (txn) / 1hr (reporting)</p>
-    </div>
-  </div>
-</section>
-
-<!-- Job Orchestration Detail -->
-<section>
-  <h2><span class="cyan">C7</span> Job Orchestration: Handler → Collector → Worker</h2>
-  <p class="small muted">All three revaluation chains use the same <code>obix</code> pattern as interest accrual.</p>
-  <pre style="font-size: 0.42em;"><code>CoreTimeEvent::EndOfDay
-  │
-  ├─ FxRevaluationEndOfDayHandler (fiat IAS 21)
-  │   └─ CollectFiatAccountsForRevaluationJob 
-  │       ├─ Cursor pagination (PAGE_SIZE = 100)
-  │       └─ ProcessRevaluationJob per account → 6100/6200
-  │
-  ├─ BtcFairValueRevaluationEndOfDayHandler (ASU 2023-08)
-  │   └─ CollectBtcAccountsForRevaluationJob
-  │       └─ ProcessBtcFairValueRevaluationJob → 7100/7200
-  │
-  └─ CollateralRevaluationEndOfDayHandler (agent, no P&L)
-      └─ CollectFacilitiesForCollateralRevaluationJob
-          └─ ProcessCollateralRevaluationJob → both-sides entry</code></pre>
-  <div class="callout" style="font-size: 0.65em; margin-top: 0.4em;">
-    <strong>Registration:</strong> <code>outbox.register_event_handler()</code> in FX module's <code>init()</code>, called from <code>LanaApp::init()</code>
-  </div>
-</section>
 
 <!-- ════════════════════════════════════════════════════
      ACT 5 — THE ROADMAP
