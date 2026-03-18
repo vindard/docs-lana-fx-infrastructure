@@ -217,7 +217,7 @@ CREATE TABLE exchange_rates (
     source          VARCHAR(50) NOT NULL,       -- 'BITFINEX', 'COINBASE', 'ECB', 'MANUAL', 'AGGREGATED'
     created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
 
-    UNIQUE(from_currency, to_currency, rate_timestamp, rate_type)
+    UNIQUE(from_currency, to_currency, rate_timestamp, rate_type, source)
 );
 
 CREATE INDEX idx_exchange_rates_lookup
@@ -232,6 +232,10 @@ CREATE INDEX idx_exchange_rates_lookup
 | `CLOSING` | Period-end revaluation of monetary items | Daily (end of business) |
 
 > **Note on AVERAGE rate type:** An `AVERAGE` rate type (monthly weighted average) is used in multi-entity consolidation scenarios where subsidiaries have different functional currencies (IAS 21.40). For a single-entity platform, this is not needed. It should be introduced if/when Lana requires consolidated financial statements across entities with different functional currencies.
+
+> **Note on `source` field scope:** The `source` column should remain scoped to *data provider* identity (BITFINEX, COINBASE, ECB, etc.). The value `AGGREGATED` represents the output of the multi-source aggregation pipeline (Component 2) and is the only non-provider value. If derivation metadata is needed in the future (e.g., TRIANGULATED, INTERPOLATED), it should be added as a separate column rather than overloading `source` with multiple dimensions.
+
+> **Note on transaction-implied rates:** Rates observed from internal transactions (e.g., the execution rate on a fiat conversion that differs from spot due to spread or negotiation) are **not** stored in `exchange_rates`. They are recorded as transaction metadata in Component 3. The `exchange_rates` table holds market data only. This separation ensures that internal/external and market/transaction rate distinctions are maintained by storage location rather than requiring an additional versioning dimension on the rate itself.
 
 ### Rate Lookup Strategy
 
