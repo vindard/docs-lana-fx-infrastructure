@@ -1345,7 +1345,7 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 
 The ordering follows demand-driven, emergent design principles: build what delivers value first and let infrastructure emerge from real consumer needs. The existing `PriceOfOneBTC` Bitfinex feed is sufficient to start — dedicated rate storage, multi-source aggregation, and robustness controls are built when operational needs demand them, not upfront.
 
-**Groups A, B, and C are fully independent of each other** — no cross-group dependencies. They can be executed in any order or in parallel. Within each group, phases are also independent unless explicitly noted (Phase 5 depends on Phase 2 within Group C).
+**Groups A, B, and C are fully independent of each other** — no cross-group dependencies. They can be executed in any order or in parallel. Within each group, phases have ordering constraints: Phase 4 depends on Phase 3 (Group B) and Phase 5 depends on Phase 2 (Group C).
 
 ### Group A: Rate-Per-Transaction Recording (independent)
 
@@ -1356,7 +1356,7 @@ The ordering follows demand-driven, emergent design principles: build what deliv
 
 ### Group B: Fiat FX Accounting (parallel)
 
-Independent of Groups A and C. Phases 3 and 4 are also independent of each other — no shared accounts, no shared templates, no ordering constraints. They can be built in any order or in parallel.
+Independent of Groups A and C. **Phase 4 depends on Phase 3**: Phase 3 establishes the core FX crate infrastructure (primitives, ledger module, chart of accounts entries, app-layer wiring) that Phase 4 builds on. Phase 3 must be completed first.
 
 #### Phase 3: Fiat FX Trading Account + Realized Gain/Loss
 
