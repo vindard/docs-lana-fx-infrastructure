@@ -126,6 +126,22 @@ Unrealized FX Gain        —          (10)
 Total                     0           0       ✓
 ```
 
+## Residual balance explanations
+
+**EUR Deposit: 0 EUR, 0 USD** — Fully zeroed out. The customer deposited 100 EUR, then 50 EUR went to the trading account (conversion) and 50 EUR were withdrawn. On the USD side: 110 USD came in at deposit (100 EUR × 1.10), +5 USD from revaluation, minus 55 USD book value transferred to trading, minus 60 USD on withdrawal (50 EUR × 1.20). Net zero.
+
+**EUR Omnibus: (50) EUR, (50) USD** — Represents the bank's net position with the outside world. 100 EUR came in on deposit but only 50 EUR went out on withdrawal. The remaining 50 EUR credit balance represents the EUR the bank received from the customer that were converted to USD — those EUR left the bank's internal books via the conversion but the omnibus still reflects the original inflow vs outflow with the external counterparty. The (50) USD balance arises from the withdrawal-rate USD equivalent (60) minus the deposit-rate equivalent (110): 60 − 110 = (50).
+
+**Trading Account: 50 EUR, 5 USD** — The 50 EUR received from the conversion haven't left the trading account (no external settlement was modeled for the EUR side), representing the bank's open EUR position. The 5 USD is the unrealized gain on that position: the 50 EUR were acquired at a book value of 55 USD (50 × 1.10) but after revaluation at 1.20 they're worth 60 USD. The ledger confirms: 55 (book value) + 2.50 (G/L clearing) + 5 (reval) − 57.50 (cash proceeds) = 5 USD.
+
+**USD Cash: 57.50 USD** — The actual USD proceeds from selling 50 EUR at the conversion rate of 1.15 (50 × 1.15 = 57.50). This is real cash the bank now holds.
+
+**Realized FX Gain: (2.50) USD** — Profit locked in on the conversion. The 50 EUR had a book value of 55 USD (carried at the 1.10 deposit rate) but were sold for 57.50 USD (at 1.15). The 2.50 difference is realized gain. Credit balance because it is income.
+
+**Unrealized FX Gain: (10) USD** — Two components: 5 USD from revaluing the EUR Deposit account (the remaining 50 EUR went from book value 55 USD at 1.10 to fair value 60 USD at 1.20), and 5 USD from revaluing the Trading Account (the 50 EUR position likewise went from 55 to 60 USD). Credit balance because it is unreported income that will either reverse or convert to realized gain when positions close.
+
+**Total: 0 EUR, 0 USD** — The balanced totals confirm all entries are correct. The economic story: the bank started with nothing, received 100 EUR, converted half to 57.50 USD cash, still holds 50 EUR, and the favorable rate movement produced 2.50 realized + 10 unrealized = 12.50 total USD in gains, which exactly accounts for the difference between historical and current values across all positions.
+
 ## Templates used
 
 | Step | Template | Module |
