@@ -661,6 +661,14 @@ DAILY or MONTHLY (configurable per account type):
      new_value = foreign_balance × closing_rate
      adjustment = new_value - current_book_value
 
+   EXCEPTION — Trading Account:
+     The Trading Account's functional-currency ledger balance is NOT its book value.
+     Realized G/L clearing zeroes out the USD base on each conversion (e.g., 55 in − 57.50
+     out + 2.50 clearing = 0), so the ledger balance reflects only accumulated revaluation
+     adjustments, not the original cost basis. The revaluation job must read current_book_value
+     from the position accumulator instead. See Component 4 (Selinger Model) for accumulator
+     semantics.
+
 4. POST revaluation entries
    (Method depends on chosen approach — see below)
 
