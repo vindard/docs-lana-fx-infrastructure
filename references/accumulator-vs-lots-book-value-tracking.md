@@ -61,7 +61,7 @@ The bank's **net EUR exposure is zero** throughout: `Trading Dr 50 + Deposit Dr 
 
 ## The Two Approaches
 
-The ledger layer is identical under both approaches: the same Trading Account, the same G/L clearing, the same revaluation entries. Both require application-layer state outside the ledger. They differ in what that external state looks like and how it behaves.
+Both approaches solve the same narrow problem: **restoring the Trading Account's book value** that G/L clearing destroyed. Regular accounts (Deposit, Omnibus) don't need either — their ledger balances preserve book cost in the entry history. The ledger layer is identical under both approaches: the same Trading Account, the same G/L clearing, the same revaluation entries. Both require application-layer state outside the ledger. They differ in what that external state looks like and how it behaves.
 
 ### Accumulator
 
