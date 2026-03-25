@@ -242,7 +242,7 @@ PR #4552 implements the accumulator approach. Current state:
 
 **1. Revaluation consuming the accumulator (Phase 4)**
 
-No revaluation code exists yet. When it's built, the revaluation worker must branch: regular accounts read book value from the ledger; the Trading Account reads `accumulated_functional` from the accumulator.
+No revaluation code exists yet. When it's built, the revaluation worker must branch. For regular accounts, the delta method works directly from the running USD balance — `adjustment = (foreign_balance × closing_rate) − current_usd_balance` — regardless of how many transactions and revaluations have been mixed into that balance. It never needs to extract "book value" separately; the formula just computes the increment from the current carrying value to fair value. For the Trading Account, this formula breaks because G/L clearing has zeroed the USD balance. The worker must instead read `accumulated_functional` from the accumulator as the book value baseline and combine it with any prior reval already on the ledger: `adjustment = (foreign_balance × closing_rate) − (accumulated_functional + prior_reval_on_ledger)`.
 
 **2. Reval unwind on partial settlement**
 
@@ -254,4 +254,14 @@ The CALA template `FIAT_FX_CONVERSION_VIA_TRADING` is missing the book-value tra
 
 **4. Withdrawal reval-unwind coordination**
 
-Withdrawals from Deposit/Omnibus don't touch the Trading Account or its accumulator — they use the ledger's own book value. But the withdrawal template needs proportional reval unwind entries on both the Deposit and Omnibus sides. This is a template gap, not an accumulator gap, but it's part of the same "partial removal" problem space.
+Withdrawals from Deposit/Omnibus don't touch the Trading Account or its accumulator. But the withdrawal template needs to unwind the proportional revaluation on the withdrawn amount from both the Deposit and Omnibus sides.
+
+This is harder than it appears. The delta method handles revaluation without separating book from reval — but withdrawal unwind *requires* that separation. If EUR Deposit has 150 EUR with a USD balance of 180, and a customer withdraws 60 EUR, the system needs to know how much of that 180 is book cost vs accumulated revaluation in order to reverse only the reval portion.
+
+The running USD balance alone doesn't provide this — multiple deposits at different rates and multiple revaluation adjustments are all mixed together. There are several approaches:
+
+- **Entry-level reconstruction:** Query the ledger entry history, sum transaction entries (book) separately from revaluation entries (reval). Requires entries to be tagged by type. Accurate but potentially expensive at query time.
+- **Cumulative reval tracker:** A lightweight per-account scalar recording total revaluation posted. Updated by the revaluation job (add adjustment) and by withdrawals (subtract proportional unwind). Then `reval_to_unwind = (withdrawn / total_foreign) × cumulative_reval` and book value = USD balance − cumulative reval. This is simpler than a full accumulator (one scalar, not two) but is still application-layer state outside the ledger.
+- **Transfer at carrying value:** Skip explicit unwind entirely — transfer `(withdrawn / total_foreign) × current_usd_balance` to Omnibus and let the next delta-method revaluation naturally correct both accounts. Simpler but produces less clean audit trails since the transfer mixes book and reval.
+
+The walkthrough uses explicit proportional unwind, which implies either entry reconstruction or a reval tracker. This is an open design question — the SPEC and PR #4552 don't address it.
