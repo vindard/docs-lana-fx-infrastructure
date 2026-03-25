@@ -435,3 +435,43 @@ Totals                              0        0     57.50    57.50  ✓
 | 3, 5 — Revaluation | Revaluation template (Deposit + Omnibus + Trading, delta method) | Phase 4 |
 | 4, 6 — Withdrawal | Withdrawal template (with reval unwind on both Deposit and Omnibus) | Deposit layer |
 | 7 — Settlement | Settlement template (EUR delivery + reval reversal) | Phase 3 |
+
+---
+
+## Implementation gap analysis
+
+_Analysis performed 2025-03-25 on branch `refactor/fx-accumulator-model` at commit `15e489bea`._
+
+### What we have (3 templates)
+
+| Template | File | Status |
+|---|---|---|
+| `FIAT_FX_CONVERSION_VIA_TRADING` | `core/fx/src/ledger/templates/fiat_fx_conversion.rs` | Present |
+| `REALIZED_FX_GAIN_LOSS` | `core/fx/src/ledger/templates/realized_fx_gain_loss.rs` | Present |
+| `FX_ROUNDING_ADJUSTMENT` | `core/fx/src/ledger/templates/fx_rounding_adjustment.rs` | Present (utility, not in walkthrough) |
+
+### What's missing (3 templates)
+
+1. **Revaluation template** (Steps 3, 5) — The delta-method mark-to-market template that posts `Dr/Cr account` vs `Cr/Dr Unrealized FX Gain` for each foreign-currency account. This is the core of Phase 4. Needs to handle Deposit (asset), Omnibus (liability), and Trading (where book value comes from the accumulator, not ledger balance).
+
+2. **Settlement template** (Step 7) — EUR delivery from Omnibus to Trading (`Dr Omnibus / Cr Trading` in EUR), plus reversal of the Trading account's revaluation and unwind of the Omnibus revaluation. Closes the trading position.
+
+3. **Withdrawal reval-unwind entries** (Steps 4, 6) — Withdrawals need to unwind proportional revaluation on both the Deposit and Omnibus sides before transferring at book value. This likely lives in the Deposit layer's withdrawal template rather than the FX module, but the FX module needs to either provide it or coordinate with the deposit layer to ensure it happens.
+
+### What's wrong with what we have
+
+**`FIAT_FX_CONVERSION_VIA_TRADING` is missing the book-value leg.** The walkthrough's Step 2 has three pairs of entries:
+
+- Entries ⑤-⑥: Source currency movement (`Dr Trading / Cr EUR Deposit` — 50 EUR) — **we have this**
+- Entries ⑨-⑩: Target currency movement (`Dr USD Cash / Cr Trading` — 57.50 USD) — **we have this**
+- Entries ⑦-⑧: **Book value transfer** (`Dr Trading / Cr EUR Deposit` — 55 USD) — **MISSING**
+
+The walkthrough's observation #7 explicitly calls this out: *"The conversion template needs a third leg (entries ⑦-⑧) to transfer the proportional USD book value from the source account to the trading account."* Without this leg, the Trading account's USD balance won't reflect the book cost of the acquired EUR, and the subsequent realized G/L clearing entry won't work correctly (it needs Trading's USD balance to be non-zero so that the G/L entry zeros it out).
+
+The current template only moves `source_amount` in `source_currency` and `target_amount` in `target_currency` — it has no functional-currency (USD) book-value transfer between source and trading accounts. This would need a `source_book_value` parameter computed by the orchestrator from the source account's current USD ledger balance.
+
+### Summary
+
+- **3 templates present**, 1 of which (rounding) is a utility not in the walkthrough
+- **2–3 templates missing**: revaluation, settlement, and withdrawal reval-unwind coordination
+- **1 template wrong**: the conversion template is missing the critical book-value leg in functional currency, which breaks the Selinger accumulator flow
