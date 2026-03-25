@@ -418,9 +418,28 @@ In both cases, while the rate could theoretically be reverse-looked-up from the 
 | Single-currency fiat foreign | **Metadata** — records functional-currency equivalent | Required: establishes IAS 21 historical rate for revaluation baseline |
 | Single-currency BTC | **Metadata** — records functional-currency fair value at acquisition | Required: establishes ASU 2023-08 initial carrying value and cost basis |
 
-Two approaches for recording:
+### Rate Metadata and Functional-Currency Entries
 
-### Approach A: Rate as Template Parameter
+Recording the rate serves two purposes: audit trail and establishing functional-currency book value. For the audit trail, the rate and timestamp are stored as transaction metadata. For the book value, the functional-currency equivalent is posted as an additional ledger entry on the same account.
+
+A EUR deposit of 100 EUR at spot rate 1.10 USD/EUR posts:
+
+```
+Dr  EUR Deposit Account    100 EUR
+Dr  EUR Deposit Account    110 USD    (functional-currency equivalent: 100 × 1.10)
+  Cr  EUR Omnibus          100 EUR
+  Cr  EUR Omnibus          110 USD
+```
+
+The USD entries establish the functional-currency book value directly in the ledger. This is essential for period-end revaluation (Component 5): the delta method computes `adjustment = (foreign_balance × closing_rate) - current_book_value`, where `current_book_value` is simply the functional-currency balance on the account. Without these entries, the revaluation job would need to scan entry history and recompute book values from rate metadata — or rely on external state that can diverge from the ledger. With them, the ledger is self-consistent: both the baseline value and any subsequent revaluation adjustments are visible in the journal.
+
+This applies to all templates that touch foreign-currency accounts — deposits, withdrawals, conversions, and any other transaction that moves non-functional-currency balances. Every foreign-currency entry carries a corresponding functional-currency entry computed from the transaction-date rate.
+
+### Rate Storage Approach
+
+Two approaches for recording the rate metadata:
+
+#### Approach A: Rate as Template Parameter
 
 Store the rate in the CALA transaction metadata:
 
@@ -437,7 +456,7 @@ struct CrossCurrencyEntryParams {
 
 The template creates entries in both currencies, and the rate is stored as transaction metadata for audit trail.
 
-### Approach B: Rate as Entry Metadata
+#### Approach B: Rate as Entry Metadata
 
 CALA entries support metadata. Store the rate on each entry:
 
@@ -638,7 +657,7 @@ DAILY or MONTHLY (configurable per account type):
 3. CALCULATE adjustments
    For each (account, currency):
      foreign_balance = sum of entries in foreign currency
-     current_book_value = current balance in functional currency
+     current_book_value = functional-currency balance on the account (established by C3 dual-currency entries)
      new_value = foreign_balance × closing_rate
      adjustment = new_value - current_book_value
 
@@ -1345,18 +1364,20 @@ Regulatory frameworks increasingly require provable controls over custodied cryp
 
 The ordering follows demand-driven, emergent design principles: build what delivers value first and let infrastructure emerge from real consumer needs. The existing `PriceOfOneBTC` Bitfinex feed is sufficient to start — dedicated rate storage, multi-source aggregation, and robustness controls are built when operational needs demand them, not upfront.
 
-**Groups A, B, and C are fully independent of each other** — no cross-group dependencies. They can be executed in any order or in parallel. Within each group, phases have ordering constraints: Phase 4 depends on Phase 3 (Group B) and Phase 5 depends on Phase 2 (Group C).
+**Groups A, B, and C can be executed in parallel.** Within each group, phases have ordering constraints: Phase 4 depends on Phase 3 (Group B) and Phase 5 depends on Phase 2 (Group C). **Phase 4 also depends on Group A**: the dual-currency entries from rate-per-transaction recording establish the functional-currency book values that revaluation computes deltas against. Groups A, B (Phase 3), and C remain independent of each other.
 
 ### Group A: Rate-Per-Transaction Recording (independent)
 
-- Store rate metadata on CALA entries for every cross-currency and single-currency non-functional-currency transaction, using the existing `PriceOfOneBTC` feed
+- Store rate metadata on CALA transactions for every cross-currency and single-currency non-functional-currency transaction, using the existing `PriceOfOneBTC` feed
+- Post functional-currency equivalent entries alongside all foreign-currency entries, establishing the book value baseline directly in the ledger
 - No new tables or services required — uses existing price feed infrastructure
-- Immediate audit trail value: every entry carries the rate that produced it
-- **Independent of all other groups and phases** — no downstream consumers, no upstream dependencies. Can be picked up by any workstream or bundled into Group B as a parallel track.
+- Immediate audit trail value: every entry carries the rate that produced it, and the functional-currency book value is ledger-native from day one
+- **Phase 4 depends on Group A**: the delta method revaluation reads `current_book_value` as the functional-currency balance on the account — these balances are established by Group A's dual-currency entries. Without Group A, revaluation has no baseline.
+- Can be picked up by any workstream or bundled into Group B.
 
 ### Group B: Fiat FX Accounting (parallel)
 
-Independent of Groups A and C. **Phase 4 depends on Phase 3**: Phase 3 establishes the core FX crate infrastructure (primitives, ledger module, chart of accounts entries, app-layer wiring) that Phase 4 builds on. Phase 3 must be completed first.
+Independent of Group C. **Phase 4 depends on Phase 3 and Group A**: Phase 3 establishes the core FX crate infrastructure (primitives, ledger module, chart of accounts entries, app-layer wiring) and Group A establishes the functional-currency book values in the ledger that Phase 4's revaluation computes deltas against. Phase 3 and Group A must be completed before Phase 4.
 
 #### Phase 3: Fiat FX Trading Account + Realized Gain/Loss
 
@@ -1368,9 +1389,10 @@ Independent of Groups A and C. **Phase 4 depends on Phase 3**: Phase 3 establish
 #### Phase 4: Fiat FX Revaluation (Unrealized)
 
 - **C4 (remainder) — Unrealized FX Accounts**: Add unrealized FX gain (6100) and unrealized FX loss (6200).
-- **C5 (fiat) — Fiat FX Revaluation**: Delta method revaluation for foreign-currency balances, posting to 6100/6200. Reconciliation job for revaluation verification.
+- **C5 (fiat) — Fiat FX Revaluation**: Delta method revaluation for foreign-currency balances, posting to 6100/6200. The revaluation worker reads the functional-currency balance on each account as `current_book_value` — these balances are maintained by the dual-currency entries established in Group A. Reconciliation job for revaluation verification.
 - **C7 — Fiat FX EndOfDay Job Chain**: Fiat FX revaluation handler + collector + worker jobs, added to the EndOfDay trigger.
 - Revalues any account denominated in a non-functional currency — no dependency on the collateral boundary or the trading account.
+- **Depends on Group A**: functional-currency book values must be in the ledger before revaluation can compute deltas against them.
 - **Note**: A minimal rate storage capability (subset of C1) will emerge here as needed for fiat closing rates — just enough to support the revaluation jobs.
 
 ### Group C: BTC Revaluation (parallel; Phase 5 depends on Phase 2)
