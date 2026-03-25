@@ -59,6 +59,18 @@ The bank's **net EUR exposure is zero** throughout: `Trading Dr 50 + Deposit Dr 
 
 **So why revalue the Trading Account's foreign-currency position at all, if it always unwinds?** IAS 21 requires it. Each monetary item must individually reflect fair value at the reporting date, even if the net exposure is zero. Auditors and regulators need to see the gross positions — a Dr 60 on Trading and a Cr 120 on Omnibus, not just "net zero." The revaluation infrastructure we're evaluating here exists to satisfy a **reporting obligation on a position with zero net FX risk**, not to track economic exposure. But the reporting requirement is non-negotiable, and it needs a book value baseline to compute against — the baseline that G/L clearing destroyed.
 
+**The Trading Account's USD balance is pure unrealized G/L.** The SPEC (Component 4) states that the Trading Account's "running balance represents the cumulative unrealized FX gain/loss." This is correct — but only as the end result of three mechanisms working together. G/L clearing zeros the realized portion after each conversion. Revaluation then posts the mark-to-market adjustment using a book value baseline from the accumulator. The resulting USD ledger balance is exactly the unrealized G/L on the position:
+
+```
+From fx_calc default scenario:
+  After conversion (G/L clearing):  Trading USD =  0       (realized swept out)
+  After reval at 1.20:              Trading USD =  4.60    (50×1.20 − 55.40 book = 4.60)
+  After reval at 1.05:              Trading USD = −2.90    (50×1.05 − 55.40 book = −2.90)
+  After settlement (unwind):        Trading USD =  0       (position closed)
+```
+
+The accumulator is the mechanism that makes this property hold — without it, the revaluation job can't compute the correct adjustment (it doesn't know the 55.40 book cost), and the balance would not represent unrealized G/L. The SPEC's claim is accurate; it just omits the dependency on the accumulator to produce it.
+
 ## The Two Approaches
 
 Both approaches solve the same narrow problem: **restoring the Trading Account's book value** that G/L clearing destroyed. Regular accounts (Deposit, Omnibus) don't need either — their ledger balances preserve book cost in the entry history. The ledger layer is identical under both approaches: the same Trading Account, the same G/L clearing, the same revaluation entries. Both require application-layer state outside the ledger. They differ in what that external state looks like and how it behaves.
