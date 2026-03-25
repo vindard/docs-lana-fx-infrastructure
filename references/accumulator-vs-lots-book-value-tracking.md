@@ -51,6 +51,14 @@ After a second conversion adds 30 EUR at rate 1.25 (book cost 33 USD), the ledge
 
 **Something external must track book value for the Trading Account.** The G/L clearing that makes realized gain isolation work is the same mechanism that destroys the book value the system needs for revaluation, partial settlement, and reval unwind. Both the accumulator and lot-based approaches restore this — they differ in how.
 
+### Trading Account: exposure, settlement, and why revaluation matters
+
+The 50 EUR in the Trading Account represent an unsettled position — the bank has sold EUR on the FX market and must physically deliver them to the counterparty. Until settlement, the position is open and must be revalued periodically. Settlement unwinds any accumulated unrealized G/L; the mark-to-market is always temporary. There is no pathway in the Selinger model where unrealized G/L on the Trading Account becomes realized — the only realization event is the conversion spread, locked in at conversion time. (An offsetting trade — buying back EUR at the current rate instead of physical delivery — could create a second realization event, but our model assumes physical delivery.)
+
+The bank's **net EUR exposure is zero** throughout: `Trading Dr 50 + Deposit Dr 50 − Omnibus Cr 100 = 0`. Every EUR asset is backed by a EUR liability. Rate movements don't change what the bank owes or owns — the revaluation on Trading is always offset by revaluation on the mirroring accounts. The EUR walkthrough proves this at every step: net unrealized is always 0. The real risks between conversion and settlement are operational (counterparty default, settlement failure), not FX.
+
+**So why revalue the Trading Account's foreign-currency position at all, if it always unwinds?** IAS 21 requires it. Each monetary item must individually reflect fair value at the reporting date, even if the net exposure is zero. Auditors and regulators need to see the gross positions — a Dr 60 on Trading and a Cr 120 on Omnibus, not just "net zero." The revaluation infrastructure we're evaluating here exists to satisfy a **reporting obligation on a position with zero net FX risk**, not to track economic exposure. But the reporting requirement is non-negotiable, and it needs a book value baseline to compute against — the baseline that G/L clearing destroyed.
+
 ## The Two Approaches
 
 The ledger layer is identical under both approaches: the same Trading Account, the same G/L clearing, the same revaluation entries. Both require application-layer state outside the ledger. They differ in what that external state looks like and how it behaves.
