@@ -6,6 +6,8 @@ steps:
   rate: 1.10
 - type: revaluation
   rate: 1.08
+- type: revaluation
+  rate: 1.06
 - type: deposit
   amount: 40
   rate: 1.12
