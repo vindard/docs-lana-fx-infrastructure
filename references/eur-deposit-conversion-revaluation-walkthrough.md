@@ -394,6 +394,35 @@ Totals                             70       70     85.46    85.46  ✓
   Trading (Dr 50 EUR, Dr 3 USD):
     Unchanged. Withdrawals do not affect the trading position.
 
+  Value sources for withdrawal calculations:
+
+    Phase 1 — Unwind deposit reval (30/50 × 6.20 = 3.72):
+      30          input parameter (withdrawal amount)
+      50          ledger read (EUR Deposit EUR balance)
+      6.20        OUT-OF-BAND (deposit cumulative reval)
+
+    Phase 2 — Transfer at book value (30 × 1.076 = 32.28):
+      1.076       derived: (deposit_USD − cumulative_reval) / deposit_EUR
+                  = (56.28 − 2.48) / 50, where 56.28 and 2.48 are the
+                  post-phase-1 values (ledger read + out-of-band)
+
+    Phase 3 — Unwind omnibus reval (30/100 × 9.20 = 2.76):
+      100         ledger-derive (omnibus EUR before transfer: 70 + 30)
+      9.20        OUT-OF-BAND (omnibus cumulative reval)
+
+    The critical out-of-band value is cumulative_reval. Group A's
+    ledger USD balance blends original book value with revaluation
+    adjustments — they are inseparable from the ledger alone. The
+    ledger shows EUR Deposit = 60 USD, but cannot answer "how much
+    is reval?" without a separately tracked cumulative_reval field.
+    This is analogous to the Trading account's position accumulator:
+    both are out-of-band values that Group A's ledger cannot provide.
+
+    cumulative_reval is updated by three operations:
+      revaluation:  += adjustment
+      withdrawal:   -= proportional unwind
+      settlement:   -= proportional reverse
+
 
 STEP 10 — Revaluation (rate → 1.22)
 
