@@ -92,6 +92,15 @@ Totals                             60       60     64.80    64.80  ✓
     (+1.20). The bank has no net EUR exposure — Deposit Dr 60 −
     Omnibus Cr 60 = 0 — so net unrealized must be zero.
 
+    Why Omnibus must be revalued: Without the Omnibus entry, the −1.20
+    would sit alone in Unrealized FX Gain, reporting a loss that doesn't
+    exist. The bank didn't lose anything — the EUR it holds for the
+    customer depreciated, but so did the EUR it owes the customer. The
+    two adjustments cancel because the bank's position is fully hedged.
+    Unrealized FX Gain would only carry a non-zero balance if the bank
+    held net EUR exposure — e.g., EUR bought speculatively without a
+    matching customer deposit.
+
 
 STEP 3 — Revaluation (rate → 1.06)
 
