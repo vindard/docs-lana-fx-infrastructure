@@ -28,9 +28,11 @@ steps:
   rate: 1.05
 - type: withdrawal
   amount: 20
+- type: settlement
+  amount: 20
 - type: revaluation
   rate: 1.02
 - type: settlement
-  amount: 50
+  amount: 30
 - type: revaluation
   rate: 0.98

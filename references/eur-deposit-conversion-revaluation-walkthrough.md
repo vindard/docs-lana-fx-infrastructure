@@ -18,9 +18,10 @@ Scenario file: `tools/scenario_eur_deposit_with_revals.yaml`
 10. Revaluation (rate → 1.22)
 11. Revaluation (rate → 1.05)
 12. Customer withdraws remaining 20 EUR
-13. Revaluation (rate → 1.02)
-14. Bank settles conversion (delivers 50 EUR to FX counterparty)
-15. Revaluation (rate → 0.98)
+13. Bank partially settles conversion (delivers 20 of 50 EUR)
+14. Revaluation (rate → 1.02)
+15. Bank settles remaining conversion (delivers 30 EUR to FX counterparty)
+16. Revaluation (rate → 0.98)
 
 ## Entries and progressive trial balances
 
@@ -512,51 +513,127 @@ Totals                             50       50     58.41    58.41  ✓
   of the historical 55.40.
 
 
-STEP 13 — Revaluation (rate → 1.02)
+STEP 13 — Partial settlement (deliver 20 of 50 EUR to FX counterparty)
 
-  Only Omnibus and Trading have EUR positions; Deposit is closed.
+  EUR delivery (20 of 50):
+  (69) Dr  EUR Omnibus         20 EUR
+  (70) Cr  Trading             20 EUR
 
-  (69) Dr  EUR Omnibus          2.41 USD
-  (70) Cr  Unrealized FX Gain   2.41 USD
-  (71) Dr  Unrealized FX Gain   1.50 USD
-  (72) Cr  Trading              1.50 USD
+  Reverse proportional Trading revaluation (20/50 × (−4.50) = −1.80):
+  (71) Dr  Trading              1.80 USD
+  (72) Cr  Unrealized FX Gain   1.80 USD
 
-  Net unrealized from step 13: +2.41 − 1.50 = +0.91
-  Cumulative unrealized: −0.91 + 0.91 = 0  ✓ (restored)
+  Unwind proportional omnibus revaluation (20/50 × (−3.59) = −1.44):
+  (73) Dr  Unrealized FX Gain   1.44 USD
+  (74) Cr  EUR Omnibus          1.44 USD
+
+  Net unrealized from step 13: +1.80 − 1.44 = +0.36
+  Cumulative unrealized: −0.91 + 0.36 = −0.55
 
                                        EUR                USD
 Account                Normal     Dr       Cr        Dr       Cr
 ─────────────────────  ──────    ────     ────     ─────    ─────
 EUR Deposit            Debit        0                  0
-EUR Omnibus            Credit                50               51
-Trading                Debit       50                          6
+EUR Omnibus            Credit                30               54.85
+Trading                Debit       30                          2.70
 USD Cash               Debit                         57.50
 Realized FX Gain       Credit                                  0.50
-Unrealized FX Gain     Credit                                  0
+Unrealized FX Gain     Credit       0.55                       0
                                  ────     ────     ─────    ─────
-Totals                             50       50     57.50    57.50  ✓
+Totals                             30       30     58.05    58.05  ✓
 
-  Verify: Omnibus 50 EUR at 1.02 = 51 ✓
-          Trading 50 EUR: accumulator 57, cumulative reval −6, fair 51.
-          Ledger: 0 − 4.50 (step 11) − 1.50 (this step) = −6 ✓
-          Net EUR: Trading 50 − Omnibus 50 = 0, unrealized = 0 ✓
+  EUR Omnibus (Cr 30 EUR, Cr 54.85 USD):
+    Only 30 EUR remain at the correspondent (50 − 20 delivered). But
+    the USD balance is 54.85 — far above fair value at any recent rate
+    (30 × 1.05 = 31.50). This is because settlement delivers EUR but
+    does not transfer USD book value out of Omnibus. The 54.85 includes
+    orphaned USD from the 20 EUR already delivered, plus the book value
+    of the remaining 30 EUR.
+
+  Trading (Dr 30 EUR, Cr 2.70 USD):
+    30 EUR remain in the trading position. The accumulator was
+    proportionally reduced: 57 × (30/50) = 34.20. Cumulative reval:
+    −4.50 + 1.80 reversed = −2.70.
+
+  Unrealized FX Gain (Dr 0.55):
+    Still non-zero — the partial settlement's reval unwinds (Trading
+    +1.80 vs Omnibus −1.44) didn't fully cancel, adding +0.36 to the
+    existing −0.91 gap from the withdrawal.
+
+  KEY INSIGHT: Partial settlement does not transfer USD from Omnibus,
+  so the Omnibus USD balance becomes disconnected from its EUR balance.
+  This creates a large asymmetry that will produce a dramatic
+  revaluation adjustment in the next step.
 
 
-STEP 14 — Settle conversion (deliver 50 EUR to FX counterparty)
+STEP 14 — Revaluation (rate → 1.02)
+
+  Only Omnibus and Trading have EUR positions; Deposit is closed.
+
+  (75) Dr  EUR Omnibus         24.25 USD
+  (76) Cr  Unrealized FX Gain  24.25 USD
+  (77) Dr  Unrealized FX Gain   0.90 USD
+  (78) Cr  Trading              0.90 USD
+
+  Net unrealized from step 14: +24.25 − 0.90 = +23.35
+  Cumulative unrealized: −0.55 + 23.35 = +22.80
+
+                                       EUR                USD
+Account                Normal     Dr       Cr        Dr       Cr
+─────────────────────  ──────    ────     ────     ─────    ─────
+EUR Deposit            Debit        0                  0
+EUR Omnibus            Credit                30               30.60
+Trading                Debit       30                          3.60
+USD Cash               Debit                         57.50
+Realized FX Gain       Credit                                  0.50
+Unrealized FX Gain     Credit                                 22.80
+                                 ────     ────     ─────    ─────
+Totals                             30       30     57.50    57.50  ✓
+
+  Unrealized FX Gain (Cr 22.80):
+    Massive non-zero balance — the first significant unrealized in this
+    scenario. This is NOT because the bank has net EUR exposure (Trading
+    30 − Omnibus 30 = 0). It happens because the Omnibus USD balance
+    (54.85) was grossly inflated relative to its EUR balance (30) due to
+    retained orphaned book value from the partial settlement.
+
+    The revaluation pushes Omnibus from 54.85 to fair value 30.60
+    (30 × 1.02), posting a −24.25 adjustment that flows to Unrealized.
+    The Trading adjustment is only −0.90 (from 31.50 to 30.60). The
+    asymmetry (24.25 vs 0.90) arises because Omnibus carried orphaned
+    USD while Trading did not.
+
+    This 22.80 is economically the book value of the 20 EUR already
+    delivered — it was sitting in Omnibus as an orphaned residual and
+    the revaluation "recognized" the gap between that residual and the
+    fair value of the remaining 30 EUR. It will fully unwind when the
+    remaining 30 EUR are settled.
+
+  EUR Omnibus (Cr 30 EUR, Cr 30.60 USD):
+    Now at fair value (30 × 1.02 = 30.60). The delta method adjustment
+    of −24.25 brought it from the bloated 54.85 down to fair value.
+
+  Trading (Dr 30 EUR, Cr 3.60 USD):
+    30 EUR at fair value 30.60 (30 × 1.02). Accumulator 34.20,
+    cumulative reval −2.70 − 0.90 = −3.60. Ledger balance −3.60 ✓
+
+
+STEP 15 — Settle remaining conversion (deliver 30 EUR to FX counterparty)
 
   EUR delivery:
-  (73) Dr  EUR Omnibus         50 EUR
-  (74) Cr  Trading             50 EUR
+  (79) Dr  EUR Omnibus         30 EUR
+  (80) Cr  Trading             30 EUR
 
-  Reverse Trading revaluation (position closed — cumulative reval −6):
-  (75) Dr  Trading              6 USD
-  (76) Cr  Unrealized FX Gain   6 USD
+  Reverse Trading revaluation (position closed — cumulative reval −3.60):
+  (81) Dr  Trading              3.60 USD
+  (82) Cr  Unrealized FX Gain   3.60 USD
 
-  Unwind remaining omnibus revaluation (50/50 × (−6) = −6):
-  (77) Dr  Unrealized FX Gain   6 USD
-  (78) Cr  EUR Omnibus          6 USD
+  Unwind remaining omnibus revaluation (30/30 × (−26.40) = −26.40):
+  (83) Dr  Unrealized FX Gain  26.40 USD
+  (84) Cr  EUR Omnibus         26.40 USD
 
-  Net unrealized from step 14: +6 − 6 = 0  ✓
+  Net unrealized from step 15: +3.60 − 26.40 = −22.80
+  Cumulative unrealized: +22.80 − 22.80 = 0  ✓ (restored)
 
                                        EUR                USD
 Account                Normal     Dr       Cr        Dr       Cr
@@ -572,11 +649,12 @@ Totals                              0        0     57.50    57.50  ✓
 
   EUR Omnibus (0 EUR, Cr 57 USD):
     All EUR delivered (100 deposited − 30 withdrawn − 20 withdrawn −
-    50 settled = 0). The Cr 57 USD is the orphaned book value: the
-    customer gave up 50 EUR worth 57 USD (at the revalued ledger rate
-    1.14) in the conversion and should have received USD in return.
-    This residual is the customer's unmodeled USD entitlement — the
-    scenario does not include a Customer USD Deposit account.
+    20 settled − 30 settled = 0). The Cr 57 USD is the orphaned book
+    value: the customer gave up 50 EUR worth 57 USD (at the revalued
+    ledger rate 1.14) in the conversion and should have received USD
+    in return. This residual is the customer's unmodeled USD
+    entitlement — the scenario does not include a Customer USD Deposit
+    account.
 
     Compare to the no-intermediate-reval case: the residual would be
     55.40 (50 × 1.108 historical rate). The extra 1.60 is exactly
@@ -585,8 +663,7 @@ Totals                              0        0     57.50    57.50  ✓
   Trading (0 EUR, 0 USD):
     Fully closed. EUR delivered to counterparty, mark-to-market
     reversed. The bank's gain was locked in at the conversion rate
-    (1.15), not any revaluation rate. The cumulative reval (−6) was
-    a temporary adjustment that unwound on settlement.
+    (1.15), not any revaluation rate.
 
   USD Cash (Dr 57.50):
     Unchanged throughout. The 57.50 USD from the FX sale is the only
@@ -599,7 +676,10 @@ Totals                              0        0     57.50    57.50  ✓
     conversion inflated the "book cost" from 55.40 to 57.
 
   Unrealized FX Gain (0):
-    Zero throughout every revaluation step.
+    The massive 22.80 from step 14 fully unwound. The Omnibus reval
+    unwind (−26.40) absorbed both the orphaned book value and the
+    reval adjustments. The Trading reval unwind (+3.60) was small by
+    comparison. Net effect: −22.80, exactly cancelling the prior balance.
 
   USD Cash (Dr 57.50) = Omnibus residual (Cr 57) + Realized (Cr 0.50):
     The bank holds 57.50 USD. Of that, 57 is the customer's converted
@@ -609,7 +689,7 @@ Totals                              0        0     57.50    57.50  ✓
     the no-reval case (55.40 + 2.10 = 57.50).
 
 
-STEP 15 — Revaluation (rate → 0.98)
+STEP 16 — Revaluation (rate → 0.98)
 
   No entries — all EUR balances are zero.
 
@@ -640,29 +720,31 @@ Totals                              0        0     57.50    57.50  ✓
 
 4. **Net EUR exposure determines net unrealized.** At every revaluation step, Deposit Dr + Trading Dr − Omnibus Cr = 0 net EUR. Therefore net unrealized is always zero after revaluation. Between operations (e.g. after withdrawals), temporary imbalances can appear but are corrected by the next revaluation run. This is the fundamental invariant: unrealized FX gain/loss reflects open currency exposure.
 
-5. **Settlement reverses mark-to-market.** When the Trading position closes via delivery, the revaluation is reversed — not reclassified to realized. The bank sold EUR at 1.15; the 8 subsequent rate movements are irrelevant to the bank's gain. The only realized gain is the conversion spread (0.50 in this scenario, or 2.10 without prior revaluation).
+5. **Settlement reverses mark-to-market.** When the Trading position closes via delivery, the revaluation is reversed — not reclassified to realized. The bank sold EUR at 1.15; the 9 subsequent rate movements are irrelevant to the bank's gain. The only realized gain is the conversion spread (0.50 in this scenario, or 2.10 without prior revaluation).
 
-6. **Omnibus USD residual reveals unmodeled account and absorbs reval-shifted book value.** After settlement, the Omnibus retains Cr 57 USD with no EUR backing. This is the customer's USD entitlement from the conversion. In a no-reval scenario, this would be 55.40 (50 × 1.108 historical rate). The extra 1.60 is exactly the realized G/L reduction (2.10 − 0.50). The residual represents whatever "book value" the conversion consumed from the deposit — if that book value was inflated by revaluation, the residual is correspondingly larger.
+6. **Partial settlement inflates Omnibus USD and creates large temporary unrealized.** Settlement delivers EUR from Omnibus but does not transfer USD book value out. After the partial settlement at step 13 (20 of 50 EUR), Omnibus retains 54.85 USD for only 30 EUR — a rate of 1.83 per EUR, far above any market rate. The subsequent revaluation at step 14 produces a −24.25 adjustment on Omnibus (from 54.85 to fair value 30.60), creating an Unrealized FX Gain balance of Cr 22.80. This is not a real FX gain — it is the delta method recognizing the gap between orphaned book value and the fair value of remaining EUR. It fully unwinds when the remaining 30 EUR are settled at step 15.
 
-7. **Two book value sources.** Regular foreign-currency accounts (EUR Deposit, EUR Omnibus) get their book value from the Group A ledger USD balance. The trading account gets its book value from the position accumulator — its ledger USD balance is 0 after realized G/L clearing, so the ledger balance cannot serve as book value for revaluation. The SPEC's revaluation process (Component 5) documents this exception: the revaluation job reads `current_book_value` from the accumulator for the Trading account instead of from the ledger balance.
+7. **Omnibus USD residual reveals unmodeled account and absorbs reval-shifted book value.** After settlement, the Omnibus retains Cr 57 USD with no EUR backing. This is the customer's USD entitlement from the conversion. In a no-reval scenario, this would be 55.40 (50 × 1.108 historical rate). The extra 1.60 is exactly the realized G/L reduction (2.10 − 0.50). The residual represents whatever "book value" the conversion consumed from the deposit — if that book value was inflated by revaluation, the residual is correspondingly larger.
 
-8. **Book value leg on conversions.** The conversion template needs a third leg (entries ㉓-㉔) to transfer the proportional USD book value from the source account to the trading account. This requires a `source_book_value` parameter computed by the orchestrator from the source account's ledger USD balance before posting.
+8. **Two book value sources.** Regular foreign-currency accounts (EUR Deposit, EUR Omnibus) get their book value from the Group A ledger USD balance. The trading account gets its book value from the position accumulator — its ledger USD balance is 0 after realized G/L clearing, so the ledger balance cannot serve as book value for revaluation. The SPEC's revaluation process (Component 5) documents this exception: the revaluation job reads `current_book_value` from the accumulator for the Trading account instead of from the ledger balance.
 
-9. **Position accumulator survives Group A.** Group A eliminates the need for external book value tracking on all regular accounts, but the trading account still needs the position accumulator because its ledger USD balance gets zeroed by realized G/L clearing.
+9. **Book value leg on conversions.** The conversion template needs a third leg (entries ㉓-㉔) to transfer the proportional USD book value from the source account to the trading account. This requires a `source_book_value` parameter computed by the orchestrator from the source account's ledger USD balance before posting.
 
-10. **Consecutive revaluations demonstrate delta method correctness.** Steps 2→3 (1.08 → 1.06), 7→8 (1.18 → 1.20), and 10→11 (1.22 → 1.05) show back-to-back revaluations. Each posts only the incremental delta from the previous state. Steps 2→3 are particularly illustrative: two consecutive revaluations on a single 60 EUR deposit each post exactly −1.20 USD adjustment (60 × 0.02 = 1.20), confirming that the delta method computes incremental changes from the current state regardless of the original booking rate. Running revaluation twice at the same rate produces a zero adjustment on the second run (idempotent).
+10. **Position accumulator survives Group A.** Group A eliminates the need for external book value tracking on all regular accounts, but the trading account still needs the position accumulator because its ledger USD balance gets zeroed by realized G/L clearing.
 
-11. **Adverse rate movement inverts asset/liability reval directions.** When EUR depreciates sharply (step 11: 1.22 → 1.05), asset revaluations produce losses (Deposit −3.40, Trading −8.50) and liability revaluations produce gains (Omnibus +11.90) — the inverse of the appreciation steps. The net remains zero because net EUR exposure hasn't changed. The Trading account's USD balance goes negative (credit on a debit-normal account), reflecting a position fair value (52.50) below book cost (57).
+11. **Consecutive revaluations demonstrate delta method correctness.** Steps 2→3 (1.08 → 1.06), 7→8 (1.18 → 1.20), and 10→11 (1.22 → 1.05) show back-to-back revaluations. Each posts only the incremental delta from the previous state. Steps 2→3 are particularly illustrative: two consecutive revaluations on a single 60 EUR deposit each post exactly −1.20 USD adjustment (60 × 0.02 = 1.20), confirming that the delta method computes incremental changes from the current state regardless of the original booking rate. Running revaluation twice at the same rate produces a zero adjustment on the second run (idempotent).
 
-12. **Path independence of total economic outcome.** Despite 8 revaluations at 8 different rates, the final trial balance's total economic outcome (57.50 USD) is identical to what it would be with no revaluation, or with any other intermediate rates. However, the split between realized gain and Omnibus residual IS path-dependent — revaluation before conversion shifts gain from realized (0.50) to residual (57 vs 55.40). The final state depends on the original booking rates (1.10, 1.12), the conversion rate (1.15), and whether revaluation occurred before conversion.
+12. **Adverse rate movement inverts asset/liability reval directions.** When EUR depreciates sharply (step 11: 1.22 → 1.05), asset revaluations produce losses (Deposit −3.40, Trading −8.50) and liability revaluations produce gains (Omnibus +11.90) — the inverse of the appreciation steps. The net remains zero because net EUR exposure hasn't changed. The Trading account's USD balance goes negative (credit on a debit-normal account), reflecting a position fair value (52.50) below book cost (57).
 
-13. **Single vs split Unrealized accounts.** The SPEC specifies separate Unrealized FX Gain (6100) and Unrealized FX Loss (6200) accounts. This walkthrough uses a single account for clarity, since the net is always zero after revaluation in this scenario. In production, splitting by direction enables separate reporting of unrealized gains and losses as required by IAS 21 financial statement presentation.
+13. **Path independence of total economic outcome.** Despite 9 revaluations at 8 different rates, the final trial balance's total economic outcome (57.50 USD) is identical to what it would be with no revaluation, or with any other intermediate rates. However, the split between realized gain and Omnibus residual IS path-dependent — revaluation before conversion shifts gain from realized (0.50) to residual (57 vs 55.40). The final state depends on the original booking rates (1.10, 1.12), the conversion rate (1.15), and whether revaluation occurred before conversion.
 
-14. **Blended book rate shifts with revaluation vintage.** The original historical blended rate is 1.108 (60 EUR at 1.10 + 40 EUR at 1.12). After revaluations at 1.08 and 1.06 before the second deposit, the ledger blended rate drops to 1.084 (108.40/100). After revaluation at 1.14, it rises to 1.14 (114/100). The conversion uses whichever rate the ledger shows at the time. After conversion, the reval-stripped book rate for the remaining 50 EUR is 1.076 — lower than the historical 1.108 because the conversion consumed USD at the revalued rate (1.14), removing 57 USD for 50 EUR instead of the historical 55.40. Both withdrawals (steps 9 and 12) use this distorted rate.
+14. **Single vs split Unrealized accounts.** The SPEC specifies separate Unrealized FX Gain (6100) and Unrealized FX Loss (6200) accounts. This walkthrough uses a single account for clarity, since the net is always zero after revaluation in this scenario. In production, splitting by direction enables separate reporting of unrealized gains and losses as required by IAS 21 financial statement presentation.
 
-15. **Post-settlement revaluation is a no-op.** Step 15 produces zero entries because all EUR balances are zero. Revaluation is purely a function of open EUR positions — once everything is settled and withdrawn, there is nothing to mark to market.
+15. **Blended book rate shifts with revaluation vintage.** The original historical blended rate is 1.108 (60 EUR at 1.10 + 40 EUR at 1.12). After revaluations at 1.08 and 1.06 before the second deposit, the ledger blended rate drops to 1.084 (108.40/100). After revaluation at 1.14, it rises to 1.14 (114/100). The conversion uses whichever rate the ledger shows at the time. After conversion, the reval-stripped book rate for the remaining 50 EUR is 1.076 — lower than the historical 1.108 because the conversion consumed USD at the revalued rate (1.14), removing 57 USD for 50 EUR instead of the historical 55.40. Both withdrawals (steps 9 and 12) use this distorted rate.
 
-16. **Withdrawal entries are spot-rate-independent.** Steps 9 and 12 show withdrawals using book value and proportional reval unwind. Post-withdrawal balances reflect the last reval rate, not the current spot. The gap between the account balance and current fair value is an unrecognized intra-period rate change captured by the next revaluation run.
+16. **Post-settlement revaluation is a no-op.** Step 16 produces zero entries because all EUR balances are zero. Revaluation is purely a function of open EUR positions — once everything is settled and withdrawn, there is nothing to mark to market.
+
+17. **Withdrawal entries are spot-rate-independent.** Steps 9 and 12 show withdrawals using book value and proportional reval unwind. Post-withdrawal balances reflect the last reval rate, not the current spot. The gap between the account balance and current fair value is an unrecognized intra-period rate change captured by the next revaluation run.
 
 ## Templates used
 
@@ -671,9 +753,9 @@ Totals                              0        0     57.50    57.50  ✓
 | 1, 4 — Deposit | Deposit template (with Group A dual-currency entries) | Deposit layer |
 | 6 — Conversion | `FIAT_FX_CONVERSION_VIA_TRADING` (with book value leg) | Phase 3 |
 | 6 — Realized G/L | `REALIZED_FX_GAIN_LOSS` | Phase 3 |
-| 2, 3, 5, 7, 8, 10, 11, 13, 15 — Revaluation | Revaluation template (Deposit + Omnibus + Trading, delta method) | Phase 4 |
+| 2, 3, 5, 7, 8, 10, 11, 14, 16 — Revaluation | Revaluation template (Deposit + Omnibus + Trading, delta method) | Phase 4 |
 | 9, 12 — Withdrawal | Withdrawal template (with reval unwind on both Deposit and Omnibus) | Deposit layer |
-| 14 — Settlement | Settlement template (EUR delivery + reval reversal) | Phase 3 |
+| 13, 15 — Settlement | Settlement template (EUR delivery + reval reversal) | Phase 3 |
 
 ---
 
@@ -691,9 +773,9 @@ _Analysis performed 2025-03-25 on branch `refactor/fx-accumulator-model` at comm
 
 ### What's missing (3 templates)
 
-1. **Revaluation template** (Steps 2, 3, 5, 7, 8, 10, 11, 13, 15) — The delta-method mark-to-market template that posts `Dr/Cr account` vs `Cr/Dr Unrealized FX Gain` for each foreign-currency account. This is the core of Phase 4. Needs to handle Deposit (asset), Omnibus (liability), and Trading (where book value comes from the accumulator, not ledger balance).
+1. **Revaluation template** (Steps 2, 3, 5, 7, 8, 10, 11, 14, 16) — The delta-method mark-to-market template that posts `Dr/Cr account` vs `Cr/Dr Unrealized FX Gain` for each foreign-currency account. This is the core of Phase 4. Needs to handle Deposit (asset), Omnibus (liability), and Trading (where book value comes from the accumulator, not ledger balance).
 
-2. **Settlement template** (Step 14) — EUR delivery from Omnibus to Trading (`Dr Omnibus / Cr Trading` in EUR), plus reversal of the Trading account's revaluation and unwind of the Omnibus revaluation. Closes the trading position.
+2. **Settlement template** (Steps 13, 15) — EUR delivery from Omnibus to Trading (`Dr Omnibus / Cr Trading` in EUR), plus reversal of the Trading account's revaluation and unwind of the Omnibus revaluation. Closes the trading position.
 
 3. **Withdrawal reval-unwind entries** (Steps 9, 12) — Withdrawals need to unwind proportional revaluation on both the Deposit and Omnibus sides before transferring at book value. This likely lives in the Deposit layer's withdrawal template rather than the FX module, but the FX module needs to either provide it or coordinate with the deposit layer to ensure it happens.
 
@@ -705,7 +787,7 @@ _Analysis performed 2025-03-25 on branch `refactor/fx-accumulator-model` at comm
 - Entries ㉕-㉖: Target currency movement (`Dr USD Cash / Cr Trading` — 57.50 USD) — **we have this**
 - Entries ㉓-㉔: **Book value transfer** (`Dr Trading / Cr EUR Deposit` — 57 USD) — **MISSING**
 
-The walkthrough's observation #8 explicitly calls this out: *"The conversion template needs a third leg (entries ㉓-㉔) to transfer the proportional USD book value from the source account to the trading account."* Without this leg, the Trading account's USD balance won't reflect the book cost of the acquired EUR, and the subsequent realized G/L clearing entry won't work correctly (it needs Trading's USD balance to be non-zero so that the G/L entry zeros it out).
+The walkthrough's observation #9 explicitly calls this out: *"The conversion template needs a third leg (entries ㉓-㉔) to transfer the proportional USD book value from the source account to the trading account."* Without this leg, the Trading account's USD balance won't reflect the book cost of the acquired EUR, and the subsequent realized G/L clearing entry won't work correctly (it needs Trading's USD balance to be non-zero so that the G/L entry zeros it out).
 
 The current template only moves `source_amount` in `source_currency` and `target_amount` in `target_currency` — it has no functional-currency (USD) book-value transfer between source and trading accounts. This would need a `source_book_value` parameter computed by the orchestrator from the source account's current USD ledger balance.
 
