@@ -476,6 +476,16 @@ CALA entries support metadata. Store the rate on each entry:
 
 A **trading account** is an intermediary account that fiat currency conversions flow through. It absorbs exchange rate differences and its running balance represents the cumulative unrealized FX gain/loss.
 
+### Out-of-Band Values
+
+The Group A dual-currency ledger design eliminates the need for external book value tracking on regular accounts, but two out-of-band values are still required:
+
+1. **Position accumulator** (Trading account only): Tracks the original cost basis of acquired EUR. Required because realized G/L clearing zeroes the Trading account's functional-currency ledger balance on each conversion — the ledger balance cannot serve as book value for revaluation. See "How Fiat Conversions Flow Through the Trading Account" below.
+
+2. **Cumulative revaluation tracker** (all revalued accounts): Tracks the total revaluation adjustment accumulated on each account. Required because the delta method blends revaluation adjustments into the ledger's functional-currency balance, making them inseparable from original book value. Withdrawal and settlement operations need this value to unwind revaluation proportionally. See Component 5, "Revaluation Unwind on Withdrawal and Settlement".
+
+Both values are maintained as running totals updated by revaluation, withdrawal, and settlement operations. Neither can be derived from ledger balances at a point in time.
+
 ### BTC Does Not Flow Through the Trading Account
 
 The trading account is a **fiat FX concept only**. BTC must not be routed through the same trading account as fiat currencies because the two fall under fundamentally different accounting regimes:
@@ -669,6 +679,27 @@ DAILY or MONTHLY (configurable per account type):
      from the position accumulator instead. See Component 4 (Selinger Model) for accumulator
      semantics.
 
+   CUMULATIVE REVALUATION TRACKER (all revalued accounts):
+     Each revalued account must maintain a cumulative_reval field alongside its ledger
+     balance. The delta method posts adjustments directly to the ledger's functional-currency
+     balance, blending them with the original book value. Once blended, the revaluation
+     portion is inseparable from the ledger alone — the ledger shows "60 USD" but cannot
+     answer "how much is revaluation vs original book value?" without this field.
+
+     cumulative_reval is required by withdrawal and settlement operations, which must
+     unwind revaluation proportionally before transferring book value. Without it, the
+     system cannot compute the reval-stripped book rate needed for these calculations.
+
+     Updated by three operations:
+       revaluation:  cumulative_reval += adjustment
+       withdrawal:   cumulative_reval -= (withdrawal_amount / account_eur_balance) × cumulative_reval
+       settlement:   cumulative_reval -= (settlement_amount / account_eur_balance) × cumulative_reval
+
+     This is analogous to the Trading account's position accumulator — both are out-of-band
+     values that the Group A ledger design requires but cannot derive from balances alone.
+     See the walkthrough (tools/scenario_eur_deposit_with_revals.yaml) for step-by-step
+     tracking of cumulative_reval across all 16 steps.
+
 4. POST revaluation entries
    (Method depends on chosen approach — see below)
 
@@ -725,6 +756,62 @@ A periodic reconciliation job verifies that:
 - Trading account balances (if in use) net to expected values given current rates
 - The sum of all unrealized gain/loss entries matches the expected revaluation position
 - No orphaned reversal entries exist (full reversal method)
+
+#### Revaluation Unwind on Withdrawal and Settlement
+
+When EUR are withdrawn or settled, the revaluation adjustments accumulated on the affected accounts must be unwound proportionally. The ledger's functional-currency balance blends original book value with revaluation — unwinding requires the out-of-band `cumulative_reval` field to separate them.
+
+**Withdrawal unwind** (three phases):
+
+```
+Phase 1 — Unwind proportional deposit revaluation:
+  portion = (withdrawal_amount / deposit_eur_balance) × deposit.cumulative_reval
+  Dr/Cr  Unrealized FX Gain     portion USD
+  Cr/Dr  EUR Deposit             portion USD
+  deposit.cumulative_reval -= portion
+
+Phase 2 — Transfer at reval-stripped book value:
+  book_rate = (deposit_usd_balance - deposit.cumulative_reval) / deposit_eur_balance
+  book_value = withdrawal_amount × book_rate
+  Dr  EUR Omnibus       withdrawal_amount EUR
+  Dr  EUR Omnibus       book_value USD
+  Cr  EUR Deposit       withdrawal_amount EUR
+  Cr  EUR Deposit       book_value USD
+
+Phase 3 — Unwind proportional omnibus revaluation:
+  portion = (withdrawal_amount / omnibus_eur_balance_before) × omnibus.cumulative_reval
+  Dr/Cr  EUR Omnibus             portion USD
+  Cr/Dr  Unrealized FX Gain     portion USD
+  omnibus.cumulative_reval -= portion
+```
+
+The deposit and omnibus unwind portions do not necessarily cancel. When revaluations have occurred at different EUR balance levels (e.g., a revaluation on 60 EUR before a second deposit brings the total to 100 EUR), the proportional reval amounts differ between deposit and omnibus. This produces a temporary non-zero net unrealized balance that the next revaluation restores to zero.
+
+**Settlement unwind** (EUR delivery from Omnibus to Trading):
+
+```
+Phase 1 — EUR delivery:
+  Dr  EUR Omnibus       settlement_amount EUR
+  Cr  Trading           settlement_amount EUR
+
+Phase 2 — Reverse proportional Trading revaluation:
+  portion = (settlement_amount / trading_eur_balance) × trading.cumulative_reval
+  Dr/Cr  Trading                 portion USD
+  Cr/Dr  Unrealized FX Gain     portion USD
+  trading.cumulative_reval -= portion
+
+Phase 3 — Unwind proportional Omnibus revaluation:
+  portion = (settlement_amount / omnibus_eur_balance_before) × omnibus.cumulative_reval
+  Dr/Cr  EUR Omnibus             portion USD
+  Cr/Dr  Unrealized FX Gain     portion USD
+  omnibus.cumulative_reval -= portion
+
+Phase 4 — Reduce position accumulator:
+  acc_portion = (settlement_amount / trading_eur_balance_before) × trading.accumulator
+  trading.accumulator -= acc_portion
+```
+
+**Note:** Settlement does not transfer USD book value out of Omnibus (unlike withdrawal, which includes a USD transfer leg). This causes Omnibus to retain orphaned USD from settled EUR, producing a spurious large unrealized balance on the next revaluation when the delta method adjusts the inflated USD down to fair value. This is a model artifact that self-corrects on final settlement but produces misleading intermediate balances. See the walkthrough step 14 for a worked example. A complete model would need either a USD book value transfer leg on settlement or separation of orphaned residual from EUR-backed book value before revaluation.
 
 ### BTC Fair Value Revaluation (ASU 2023-08)
 
@@ -1398,6 +1485,7 @@ Independent of Group C. **Phase 4 depends on Phase 3 and Group A**: Phase 3 esta
 
 - **C4 (remainder) — Unrealized FX Accounts**: Add unrealized FX gain (6100) and unrealized FX loss (6200).
 - **C5 (fiat) — Fiat FX Revaluation**: Delta method revaluation for foreign-currency balances, posting to 6100/6200. The revaluation worker reads the functional-currency balance on each account as `current_book_value` — these balances are maintained by the dual-currency entries established in Group A. Reconciliation job for revaluation verification.
+- **C5 (fiat) — Cumulative Revaluation Tracker**: Per-account `cumulative_reval` field maintained by the revaluation worker (incremented on each adjustment) and consumed by withdrawal/settlement unwind logic. Required for computing reval-stripped book rates. See Component 5, "Cumulative Revaluation Tracker" and "Revaluation Unwind on Withdrawal and Settlement".
 - **C7 — Fiat FX EndOfDay Job Chain**: Fiat FX revaluation handler + collector + worker jobs, added to the EndOfDay trigger.
 - Revalues any account denominated in a non-functional currency — no dependency on the collateral boundary or the trading account.
 - **Depends on Group A**: functional-currency book values must be in the ledger before revaluation can compute deltas against them.
