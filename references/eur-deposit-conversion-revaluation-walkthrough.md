@@ -560,10 +560,18 @@ Totals                             30       30     58.05    58.05  ✓
     +1.80 vs Omnibus −1.44) didn't fully cancel, adding +0.36 to the
     existing −0.91 gap from the withdrawal.
 
-  KEY INSIGHT: Partial settlement does not transfer USD from Omnibus,
-  so the Omnibus USD balance becomes disconnected from its EUR balance.
-  This creates a large asymmetry that will produce a dramatic
-  revaluation adjustment in the next step.
+  MODEL ARTIFACT: Partial settlement does not transfer USD book value
+  out of Omnibus — it only moves EUR. Compare with withdrawal (steps 9,
+  12), which includes a USD book value transfer leg. This causes the
+  Omnibus USD balance (54.85) to become disconnected from its EUR
+  balance (30), inflating the USD side with orphaned book value from
+  the 20 EUR already delivered. In a complete model with a Customer USD
+  Deposit account, the conversion at step 6 would have credited that
+  account with the customer's USD entitlement, and the Omnibus would
+  only carry USD proportional to its EUR balance. The settlement
+  template should either transfer proportional USD book value to the
+  customer's account, or the model should separate orphaned residual
+  from EUR-backed book value before revaluation runs.
 
 
 STEP 14 — Revaluation (rate → 1.02)
@@ -590,24 +598,26 @@ Unrealized FX Gain     Credit                                 22.80
                                  ────     ────     ─────    ─────
 Totals                             30       30     57.50    57.50  ✓
 
-  Unrealized FX Gain (Cr 22.80):
-    Massive non-zero balance — the first significant unrealized in this
-    scenario. This is NOT because the bank has net EUR exposure (Trading
-    30 − Omnibus 30 = 0). It happens because the Omnibus USD balance
-    (54.85) was grossly inflated relative to its EUR balance (30) due to
-    retained orphaned book value from the partial settlement.
+  Unrealized FX Gain (Cr 22.80) — MODEL ARTIFACT:
+    This massive balance is NOT a real unrealized FX gain. The bank has
+    zero net EUR exposure (Trading 30 − Omnibus 30 = 0), so the true
+    economic unrealized should be near zero.
 
-    The revaluation pushes Omnibus from 54.85 to fair value 30.60
-    (30 × 1.02), posting a −24.25 adjustment that flows to Unrealized.
-    The Trading adjustment is only −0.90 (from 31.50 to 30.60). The
-    asymmetry (24.25 vs 0.90) arises because Omnibus carried orphaned
-    USD while Trading did not.
+    The 22.80 arises because the revaluation delta method adjusts
+    Omnibus from its inflated USD balance (54.85) to fair value (30.60),
+    posting −24.25, while Trading only adjusts by −0.90. The asymmetry
+    exists because Omnibus carries orphaned USD book value from the
+    partial settlement (see step 13 note), while Trading does not.
 
-    This 22.80 is economically the book value of the 20 EUR already
-    delivered — it was sitting in Omnibus as an orphaned residual and
-    the revaluation "recognized" the gap between that residual and the
-    fair value of the remaining 30 EUR. It will fully unwind when the
-    remaining 30 EUR are settled.
+    In a complete model with a Customer USD Deposit account, the
+    Omnibus USD would only reflect the book value of its remaining
+    30 EUR (~32 USD), and the revaluation adjustment would be small
+    (~1.40), producing a near-zero net unrealized consistent with the
+    bank's zero EUR exposure.
+
+    The 22.80 is self-correcting — it fully unwinds on final settlement
+    (step 15) — but it would produce misleading intermediate financial
+    statements if reported as-is.
 
   EUR Omnibus (Cr 30 EUR, Cr 30.60 USD):
     Now at fair value (30 × 1.02 = 30.60). The delta method adjustment
@@ -676,10 +686,12 @@ Totals                              0        0     57.50    57.50  ✓
     conversion inflated the "book cost" from 55.40 to 57.
 
   Unrealized FX Gain (0):
-    The massive 22.80 from step 14 fully unwound. The Omnibus reval
+    The artifact 22.80 from step 14 fully unwound. The Omnibus reval
     unwind (−26.40) absorbed both the orphaned book value and the
     reval adjustments. The Trading reval unwind (+3.60) was small by
-    comparison. Net effect: −22.80, exactly cancelling the prior balance.
+    comparison. Net effect: −22.80, exactly cancelling the prior
+    balance. The self-correcting nature confirms this is a temporary
+    model artifact, not a permanent accounting error.
 
   USD Cash (Dr 57.50) = Omnibus residual (Cr 57) + Realized (Cr 0.50):
     The bank holds 57.50 USD. Of that, 57 is the customer's converted
@@ -718,11 +730,11 @@ Totals                              0        0     57.50    57.50  ✓
 
 3. **Withdrawal unwinds revaluation, does not realize it.** A withdrawal returns EUR to the customer — it is not a market transaction. The proportional revaluation on both the Deposit (asset) and Omnibus (liability) is reversed. In the simple case (no intermediate revaluations), the two unwinds cancel. With intermediate revaluations at different EUR balance levels (steps 9 and 12), the unwinds produce a temporary non-zero net unrealized (−0.96 and −0.91) because the deposit and omnibus have different proportional reval amounts. The subsequent revaluation restores net unrealized to zero.
 
-4. **Net EUR exposure determines net unrealized.** At every revaluation step, Deposit Dr + Trading Dr − Omnibus Cr = 0 net EUR. Therefore net unrealized is always zero after revaluation. Between operations (e.g. after withdrawals), temporary imbalances can appear but are corrected by the next revaluation run. This is the fundamental invariant: unrealized FX gain/loss reflects open currency exposure.
+4. **Net EUR exposure determines net unrealized — with a caveat.** At every revaluation step, Deposit Dr + Trading Dr − Omnibus Cr = 0 net EUR. In a complete model, net unrealized would therefore be zero after revaluation. However, the current model breaks this invariant after partial settlement (step 14: Cr 22.80 despite zero net EUR exposure) because the Omnibus USD balance becomes disconnected from its EUR balance (see observation #6). The invariant holds correctly for all revaluation steps that are not preceded by a partial settlement without intervening revaluation.
 
 5. **Settlement reverses mark-to-market.** When the Trading position closes via delivery, the revaluation is reversed — not reclassified to realized. The bank sold EUR at 1.15; the 9 subsequent rate movements are irrelevant to the bank's gain. The only realized gain is the conversion spread (0.50 in this scenario, or 2.10 without prior revaluation).
 
-6. **Partial settlement inflates Omnibus USD and creates large temporary unrealized.** Settlement delivers EUR from Omnibus but does not transfer USD book value out. After the partial settlement at step 13 (20 of 50 EUR), Omnibus retains 54.85 USD for only 30 EUR — a rate of 1.83 per EUR, far above any market rate. The subsequent revaluation at step 14 produces a −24.25 adjustment on Omnibus (from 54.85 to fair value 30.60), creating an Unrealized FX Gain balance of Cr 22.80. This is not a real FX gain — it is the delta method recognizing the gap between orphaned book value and the fair value of remaining EUR. It fully unwinds when the remaining 30 EUR are settled at step 15.
+6. **Partial settlement produces a spurious large unrealized balance (model artifact).** Settlement delivers EUR from Omnibus but does not transfer USD book value out — unlike withdrawal, which includes a USD book value transfer leg. After the partial settlement at step 13 (20 of 50 EUR), Omnibus retains 54.85 USD for only 30 EUR (effective rate 1.83, far above any market rate). The subsequent revaluation at step 14 adjusts Omnibus from 54.85 to fair value 30.60, producing an Unrealized FX Gain of Cr 22.80 — despite the bank having zero net EUR exposure. This is a **model artifact**, not a real FX gain. The revaluation correctly applies the delta method, but the Omnibus USD is inflated by orphaned book value from the settled EUR. In a complete model with a Customer USD Deposit account, the Omnibus would only carry USD proportional to its EUR balance, and the unrealized would remain near zero. The artifact is self-correcting (unwinds on final settlement at step 15), but would produce misleading intermediate financial statements. **The settlement template needs a USD book value transfer leg (analogous to withdrawal) or the model needs to separate orphaned residual from EUR-backed book value before revaluation.**
 
 7. **Omnibus USD residual reveals unmodeled account and absorbs reval-shifted book value.** After settlement, the Omnibus retains Cr 57 USD with no EUR backing. This is the customer's USD entitlement from the conversion. In a no-reval scenario, this would be 55.40 (50 × 1.108 historical rate). The extra 1.60 is exactly the realized G/L reduction (2.10 − 0.50). The residual represents whatever "book value" the conversion consumed from the deposit — if that book value was inflated by revaluation, the residual is correspondingly larger.
 
