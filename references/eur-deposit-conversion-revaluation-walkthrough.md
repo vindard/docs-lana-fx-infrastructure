@@ -44,6 +44,9 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                             60       60        66       66  ✓
 
+  Out-of-band balances:
+    (none)
+
   EUR Deposit (Dr 60 EUR, Dr 66 USD):
     The bank's record of the customer's claim. 60 EUR deposited,
     booked at spot 1.10 = 66 USD.
@@ -77,6 +80,10 @@ Realized FX Gain       Credit                                  0
 Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                             60       60     64.80    64.80  ✓
+
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = -1.20
+    EUR Omnibus     cumulative_reval = -1.20
 
   EUR Deposit (Dr 60 EUR, Dr 64.80 USD):
     First mark-to-market. EUR depreciated from 1.10 to 1.08, so the
@@ -128,6 +135,10 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                             60       60     63.60    63.60  ✓
 
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = -2.40
+    EUR Omnibus     cumulative_reval = -2.40
+
   Each step posts exactly −1.20 USD (60 × 0.02 = 1.20 per 2-cent rate
   move). The delta method computes the incremental change from the
   previous state regardless of the original booking rate — no reversal
@@ -154,6 +165,10 @@ Realized FX Gain       Credit                                  0
 Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                            100      100     108.40   108.40  ✓
+
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = -2.40
+    EUR Omnibus     cumulative_reval = -2.40
 
   EUR Deposit (Dr 100 EUR, Dr 108.40 USD):
     Customer's total claim after both deposits. The USD balance is
@@ -192,6 +207,10 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                            100      100       114      114  ✓
 
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = 3.20
+    EUR Omnibus     cumulative_reval = 3.20
+
   EUR Deposit (Dr 100 EUR, Dr 114 USD):
     100 EUR marked to market at 1.14. Delta = 114 − 108.40 = +5.60.
     This is the first revaluation on the combined 100 EUR balance — the
@@ -227,6 +246,11 @@ Realized FX Gain       Credit                                  0.50
 Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                            100      100     114.50   114.50  ✓
+
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = 3.20
+    EUR Omnibus     cumulative_reval = 3.20
+    Trading         accumulator = 57
 
   EUR Deposit (Dr 50 EUR, Dr 57 USD):
     Customer's remaining balance after conversion. 50 EUR at the current
@@ -286,6 +310,11 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                            100      100     118.50   118.50  ✓
 
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = 5.20
+    EUR Omnibus     cumulative_reval = 7.20
+    Trading         cumulative_reval = 2, accumulator = 57
+
   EUR Deposit (Dr 50 EUR, Dr 59 USD):
     50 EUR marked to market at 1.18. Delta = 59 − 57 = +2.
 
@@ -329,6 +358,11 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                            100      100     120.50   120.50  ✓
 
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = 6.20
+    EUR Omnibus     cumulative_reval = 9.20
+    Trading         cumulative_reval = 3, accumulator = 57
+
   Verify cumulative revals at this point:
     Deposit: +3.20 (steps 2–5) + 2 (step 7) + 1 (step 8) = +6.20
     Omnibus: +3.20 (steps 2–5) + 4 (step 7) + 2 (step 8) = +9.20
@@ -366,6 +400,11 @@ Realized FX Gain       Credit                                  0.50
 Unrealized FX Gain     Credit       0.96                       0
                                  ────     ────     ─────    ─────
 Totals                             70       70     85.46    85.46  ✓
+
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = 2.48
+    EUR Omnibus     cumulative_reval = 6.44
+    Trading         cumulative_reval = 3, accumulator = 57
 
   Unrealized FX Gain (Dr 0.96):
     Non-zero for the first time. The deposit unwind (−3.72) and omnibus
@@ -448,6 +487,11 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                             70       70     85.90    85.90  ✓
 
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = 2.88
+    EUR Omnibus     cumulative_reval = 6.88
+    Trading         cumulative_reval = 4, accumulator = 57
+
   Unrealized FX Gain (0):
     Restored to zero. The +0.96 from this revaluation exactly offsets
     the −0.96 gap left by the withdrawal. After every revaluation, the
@@ -483,6 +527,11 @@ Realized FX Gain       Credit                                  0.50
 Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                             70       70     78.50    78.50  ✓
+
+  Out-of-band balances:
+    EUR Deposit     cumulative_reval = -0.52
+    EUR Omnibus     cumulative_reval = -5.02
+    Trading         cumulative_reval = -4.50, accumulator = 57
 
   Trading (Dr 50 EUR, Cr 4.50 USD):
     Credit USD balance on a debit-normal account — the position's fair
@@ -528,6 +577,10 @@ Unrealized FX Gain     Credit       0.91                       0
                                  ────     ────     ─────    ─────
 Totals                             50       50     58.41    58.41  ✓
 
+  Out-of-band balances:
+    EUR Omnibus     cumulative_reval = -3.59
+    Trading         cumulative_reval = -4.50, accumulator = 57
+
   EUR Deposit (0 EUR, 0 USD):
     Fully closed. All EUR withdrawn, all revaluation unwound.
 
@@ -570,6 +623,10 @@ Realized FX Gain       Credit                                  0.50
 Unrealized FX Gain     Credit       0.55                       0
                                  ────     ────     ─────    ─────
 Totals                             30       30     58.05    58.05  ✓
+
+  Out-of-band balances:
+    EUR Omnibus     cumulative_reval = -2.15
+    Trading         cumulative_reval = -2.70, accumulator = 34.20
 
   EUR Omnibus (Cr 30 EUR, Cr 54.85 USD):
     Only 30 EUR remain at the correspondent (50 − 20 delivered). But
@@ -626,6 +683,10 @@ Realized FX Gain       Credit                                  0.50
 Unrealized FX Gain     Credit                                 22.80
                                  ────     ────     ─────    ─────
 Totals                             30       30     57.50    57.50  ✓
+
+  Out-of-band balances:
+    EUR Omnibus     cumulative_reval = -26.40
+    Trading         cumulative_reval = -3.60, accumulator = 34.20
 
   Unrealized FX Gain (Cr 22.80) — MODEL ARTIFACT:
     This massive balance is NOT a real unrealized FX gain. The bank has
@@ -686,6 +747,9 @@ Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                              0        0     57.50    57.50  ✓
 
+  Out-of-band balances:
+    (none)
+
   EUR Omnibus (0 EUR, Cr 57 USD):
     All EUR delivered (100 deposited − 30 withdrawn − 20 withdrawn −
     20 settled − 30 settled = 0). The Cr 57 USD is the orphaned book
@@ -745,6 +809,9 @@ Realized FX Gain       Credit                                  0.50
 Unrealized FX Gain     Credit                                  0
                                  ────     ────     ─────    ─────
 Totals                              0        0     57.50    57.50  ✓
+
+  Out-of-band balances:
+    (none)
 
   Revaluation is purely a function of open EUR positions. Once
   everything is settled and withdrawn, there is nothing to mark to
