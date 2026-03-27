@@ -210,6 +210,71 @@ Reval unwind follows the same consumption policy. A FIFO removal of 40 EUR touch
 
 The critical insight: **both approaches require application-layer infrastructure outside the ledger**. The accumulator is not a workaround for a deficiency that lots would avoid — the ledger's G/L clearing makes external book value tracking necessary regardless. The choice is between minimal external state (two scalars) with WAC-only semantics, or richer external state (lot records) with policy flexibility.
 
+### The interface contract: `FxConversion`
+
+The `FxConversion` struct is the narrow data contract between the position layer and the ledger layer. It carries:
+
+```
+FxConversion
+├── details: FxConversionDetails
+│   ├── source_currency, target_currency, functional_currency
+│   ├── source_amount, target_amount
+├── rounding_difference: Decimal        ← set by ExchangeRate::convert()
+└── realized_gain_loss: Decimal         ← set by FxPosition::decrease_position()
+```
+
+The orchestrator flow through `CoreFx::convert_fiat_fx()`:
+
+1. `FxConversion::new(...)` — computes target amount and rounding difference via `rate.convert()`
+2. `positions.update_position_in_op(op, &mut conversion)` — calls increase/decrease on `FxPosition`; on decrease, computes realized G/L and writes it back via `conversion.set_realized_gain_loss(decimal_value)`
+3. `ledger.post_fx_conversion_in_op(op, &conversion, accounts)` — posts template entries, reading `realized_gain_loss()` and `rounding_difference()` from the conversion
+
+The critical point: `set_realized_gain_loss()` accepts a **single `Decimal`**. The accumulator produces this via one WAC computation; the lot model produces it by summing per-lot G/L values into a single total. The ledger never sees how the number was produced. This is why the CALA templates work unchanged across both position models — they receive the same type signature either way.
+
+### System of record mapping
+
+| Concern | System of Record |
+|---|---|
+| Double-entry balances | CALA ledger |
+| Aggregate realized G/L | CALA (`REALIZED_FX_GAIN_LOSS` template) |
+| Cost basis methodology | `FxPosition` entity events |
+| Per-lot attribution (FIFO) | `LotConsumed` events |
+| Per-accumulator WAC | `ForeignCurrencyDisposed` events |
+| Rounding adjustments | CALA (`FX_ROUNDING_ADJUSTMENT` template) |
+
+## Industry Precedent: GL Records Results, Not Methods
+
+The separation between aggregate GL entries and granular position tracking is standard practice across accounting systems. The general ledger records **aggregate flows**; subsidiary systems hold **granular attribution**. Reconciliation ties them together.
+
+### Accounting standards
+
+**IAS 21 (paras 28, 32)**: Requires exchange differences to be recognized in profit or loss when monetary items are settled or retranslated. It mandates the *amount* be recognized — it is silent on FIFO vs WAC vs specific identification at the journal entry level. The standard considers cost-layer methodology a subsidiary/internal tracking concern, not a general ledger concern.
+
+**ASC 830-10-45**: Realized G/L on settlement is recognized in income. The codification does not prescribe how cost basis is determined for FX positions specifically — it defers to the entity's accounting policy. Only the resulting difference between transaction rate and settlement rate flows to P&L. The journal entry is the aggregate.
+
+### ERP / Treasury systems
+
+**SAP S/4HANA**: The FX valuation module (`FAGL_FC_VAL`) posts a single aggregate G/L entry per currency per account per valuation run. If lot/deal-level tracking exists, it lives in the Treasury sub-module (TRM), not in the general ledger postings.
+
+**Oracle Financials (GL + Treasury)**: Oracle Treasury tracks individual deals/lots with full deal-level P&L attribution. But the GL integration layer posts **summarized journal entries** — one debit/credit pair per G/L account per posting batch. The deal-level detail stays in the Treasury subledger.
+
+**Murex / Calypso (capital markets)**: These systems maintain per-deal, per-lot P&L internally with full attribution (including specific lot identification for tax). Their GL integration layer always posts **aggregate journal entries**. The general ledger is not the system of record for trade-level detail — the trade blotter / position keeper is.
+
+### The pattern
+
+```
+┌─────────────────────────┐     single aggregate     ┌──────────────────┐
+│  Position / Subledger   │  ──── G/L amount ────▶   │  General Ledger  │
+│                         │                          │                  │
+│  - Per-lot events       │                          │  - One Dr/Cr     │
+│  - FIFO/WAC/specific-id │                          │    pair per       │
+│  - Full attribution     │                          │    conversion     │
+│  - Audit trail          │                          │  - Aggregate P&L │
+└─────────────────────────┘                          └──────────────────┘
+```
+
+The general ledger is a **summary**. The subledger holds the **detail**. This is a core accounting architecture principle, not specific to FX. It validates the design choice in this codebase: the CALA templates are agnostic to cost-basis methodology because that is architecturally correct — the general ledger should not encode the position-tracking strategy.
+
 ## Trade-offs
 
 ### When lots are needed

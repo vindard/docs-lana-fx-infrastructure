@@ -904,3 +904,4 @@ The current template only moves `source_amount` in `source_currency` and `target
 - **3 templates present**, 1 of which (rounding) is a utility not in the walkthrough
 - **2–3 templates missing**: revaluation, settlement, and withdrawal reval-unwind coordination
 - **1 template wrong**: the conversion template is missing the critical book-value leg in functional currency, which breaks the Selinger accumulator flow
+
