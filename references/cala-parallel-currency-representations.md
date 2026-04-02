@@ -1,0 +1,180 @@
+# Parallel Currency Representations in CALA: Industry Comparison & Requirements
+
+## 1. Problem Statement
+
+Ledger entries frequently need to carry amounts in more than one currency. Common use cases include:
+
+- **Functional/accounting currency:** Recording the book value of a foreign-currency transaction in the entity's home currency (IAS 21).
+- **Group/consolidation currency:** Recording the amount in a parent company's reporting currency for consolidated financial statements.
+- **Reporting currency:** A secondary currency required by regulators or internal policy.
+- **Object currency:** A currency tied to a cost object or profit center.
+
+CALA's current entry model stores a single `(currency, units)` pair per entry. To represent the same economic event in multiple currencies, applications must create separate entries — multiplying the entry count per transaction. When the parallel currency happens to be the same as the transaction currency, this creates degenerate duplicate entries, requiring either conditional template routing or acceptance of redundant posting.
+
+This document compares how major ERP/GL systems handle parallel currency representations and derives requirements for extending CALA.
+
+---
+
+## 2. Industry Comparison
+
+### 2.1 SAP S/4HANA — ACDOCA (Universal Journal)
+
+SAP's Universal Journal stores **up to 10 parallel currency amounts per journal entry line**:
+
+| Column | Purpose |
+|--------|---------|
+| `RHCUR` / `HSL` | Local (company code) currency |
+| `RWCUR` / `TSL` | Transaction currency |
+| `RKCUR` / `KSL` | Group currency |
+| `ROCUR` / `OSL` | Object currency |
+| `R2CUR` – `R0CUR` | User-defined parallel currencies |
+
+Every posting to ACDOCA writes one row. That single row carries the transaction amount and up to nine parallel currency equivalents. Currency type is a **column-level concept** — the row count does not change based on how many currency representations are needed.
+
+**Balance computation:** SAP maintains separate balance aggregations per currency type. Balances are computed from the parallel currency columns, not from separate entry rows.
+
+**Same-currency handling:** When two currency types resolve to the same currency code, their columns hold the same value. No conditional logic, no extra rows.
+
+### 2.2 Microsoft Dynamics 365 Finance
+
+Every General Ledger entry in Dynamics 365 stores **three amounts**:
+
+| Field | Purpose |
+|-------|---------|
+| `TransactionCurrencyAmount` | Original transaction currency |
+| `AccountingCurrencyAmount` | Accounting currency (company-level) |
+| `ReportingCurrencyAmount` | Optional secondary reporting currency |
+
+Amounts are computed independently using the transaction-date rate. The GL stores all three on every entry — there is no conditional inclusion.
+
+**Balance computation:** Dynamics maintains trial balances per currency type, computed from their respective columns.
+
+**Same-currency handling:** When currencies match, the columns hold identical values. The column still exists and is populated.
+
+### 2.3 Oracle General Ledger
+
+Oracle GL stores entries with:
+
+| Field | Purpose |
+|-------|---------|
+| `ENTERED_DR` / `ENTERED_CR` | Transaction (entered) currency amounts |
+| `ACCOUNTED_DR` / `ACCOUNTED_CR` | Accounted currency amounts |
+| `CURRENCY_CODE` | Transaction currency |
+
+Every journal line has both entered and accounted amounts.
+
+**Same-currency handling:** `ENTERED == ACCOUNTED` when currencies match.
+
+### 2.4 Common Pattern
+
+All three systems share the same structural solution:
+
+> **Multiple currency columns per entry row, not multiple entry rows per currency.**
+
+| System | Transaction Amount | Parallel Amounts | Extra Rows per Currency? |
+|--------|--------------------|------------------|--------------------------|
+| SAP ACDOCA | `RWCUR/TSL` | Up to 9 parallel columns | No |
+| Dynamics 365 | `TransactionCurrencyAmount` | 2 parallel columns | No |
+| Oracle GL | `ENTERED_DR/CR` | 1 parallel column pair | No |
+| **CALA (current)** | `currency/units` | *(not available)* | **Yes — must add separate entries** |
+
+---
+
+## 3. Recommendation
+
+**Extend CALA to support optional parallel currency amounts on entries.**
+
+This aligns CALA with the universal industry pattern where each entry row carries the transaction-currency amount plus one or more parallel currency equivalents. It eliminates the need for template proliferation, application-layer routing heuristics, and structural workarounds.
+
+The extension should be **additive and backward-compatible**: existing entries carry no parallel amounts, and all current behavior is preserved. Parallel currency amounts participate in separate balance pipelines that track each currency type's balances independently.
+
+---
+
+## 4. Requirements (Derived from Industry Standards)
+
+The following requirements capture what CALA must support to align with the parallel currency entry model used by SAP, Dynamics 365, and Oracle GL. These are stated as behavioral requirements, not implementation prescriptions.
+
+### 4.1 Parallel Currency Amounts on Entries
+
+**REQ-1: Each entry must be able to carry one or more parallel currency amounts alongside its transaction-currency amount.**
+
+An entry records a transaction in its original currency (e.g. 60 EUR). The ledger must also be able to record, on the same entry, equivalent amounts in other currencies (e.g. 66 USD, 57 GBP). This is a column-level concept — it must not require additional entry rows.
+
+- Each parallel amount consists of a currency code and a decimal amount, supplied as a pair.
+- Parallel amounts are always positive; they inherit their debit/credit direction from the entry.
+- When a parallel currency equals the transaction currency, the parallel amount equals the transaction amount.
+- Entries that carry no parallel amounts behave identically to entries today (backward compatibility).
+
+**Industry basis:** SAP carries up to 10 currency amounts per ACDOCA row. Dynamics 365 carries 3 per GL entry. Oracle carries 2 per journal line. None create additional rows for currency representations.
+
+### 4.2 Template-Driven Parallel Amounts
+
+**REQ-2: Transaction templates must be able to specify parallel currency amounts as expressions, evaluated at post time.**
+
+CALA templates define entries using CEL expressions (e.g. `params.amount`, `params.currency`). Parallel currency fields must follow the same pattern — optional expressions that, when present, are evaluated alongside the existing fields.
+
+This eliminates the need for separate template variants per currency combination. A single template handles any number of parallel currency representations by accepting the appropriate parameters.
+
+**Industry basis:** All three systems compute parallel currency amounts at posting time using the transaction-date exchange rate. The posting rule defines where each parallel amount goes — there is no separate "FX variant" of a posting rule.
+
+### 4.3 Parallel Currency Balance Validation
+
+**REQ-3: Transactions must balance in each parallel currency independently, not just in the transaction currency.**
+
+CALA currently validates that every transaction balances per `(currency, layer)` — debits equal credits for each currency on each layer. The same invariant must hold for parallel currency amounts: for each parallel currency type present in the transaction, debits must equal credits per `(parallel_currency, layer)`.
+
+**Industry basis:** SAP, Dynamics 365, and Oracle all enforce that journal entries balance independently in each currency type they carry.
+
+### 4.4 Separate Balance Pipeline per Currency Type
+
+**REQ-4: The ledger must maintain balances for each parallel currency type separately from transaction-currency balances.**
+
+Transaction-currency balances answer: "How many EUR does this account hold?" A parallel currency balance answers a different question — e.g. "What is the USD book value of this account's EUR position?" or "What is this position worth in group reporting currency?" These are distinct quantities that must not be conflated.
+
+- Parallel currency balances must be keyed by `(journal, account, currency_type, currency)` or equivalent, stored in a pipeline that is separate from transaction-currency balances.
+- Parallel currency balances must track the same layer structure (settled, pending, encumbrance) as transaction-currency balances.
+- Parallel currency balance updates must occur atomically within the same database transaction as the entry post.
+
+**Why separate?** If a parallel USD balance (e.g. the book value of a EUR position) and a transaction USD balance (actual USD holdings) shared the same aggregation, they would be summed together — producing an incorrect result.
+
+**Industry basis:** SAP maintains separate balance aggregations per currency type. Dynamics 365 computes trial balances per currency type from their respective columns. Oracle reads accounted balances from `ACCOUNTED_DR/CR`, not from `ENTERED_DR/CR`.
+
+### 4.5 Parallel Currency Balance Query API
+
+**REQ-5: The ledger must expose a query interface for parallel currency balances.**
+
+Consumers need to retrieve the current balance for a specific currency type on an account. The query must return the balance with the same layer structure as transaction-currency balance queries.
+
+Example — a revaluation consumer would query:
+```
+book_value  = parallel_balance(journal, account, "functional", USD).settled
+fair_value  = transaction_balance(journal, account, EUR).settled × closing_rate
+adjustment  = fair_value − book_value
+```
+
+**Industry basis:** All three systems provide direct query paths for each currency type's balances.
+
+### 4.6 Backward Compatibility
+
+**REQ-6: All changes must be additive. Existing templates, entries, balances, and queries must continue to work without modification.**
+
+- Existing entries (already persisted) must deserialize correctly with parallel currency fields absent.
+- Existing templates that do not specify parallel currency expressions must produce entries identical to today.
+- Existing transaction-currency balance tables and queries must be unaffected.
+- Entry creation without parallel currency fields must work exactly as before.
+
+**Industry basis:** SAP's additional currency columns are optional/nullable. Dynamics 365's `ReportingCurrencyAmount` is optional. The pattern is inherently additive.
+
+---
+
+## 5. Open Questions
+
+1. **Velocity controls:** Should parallel currency amounts participate in velocity limit checks? Initial recommendation: no — velocity limits are typically about transaction-currency exposure.
+
+2. **Account sets:** Should parallel currency balances be queryable through account sets? Likely yes for reporting, but can be deferred.
+
+3. **How many parallel currencies per entry?** SAP supports up to 10. These requirements are stated generically. An initial implementation could support one parallel currency per entry and extend later, or support N from the start. The requirements are compatible with either approach.
+
+4. **Adjustment-only entries:** Some use cases (e.g. revaluation) adjust only a parallel currency balance without changing the transaction-currency balance. These entries would carry parallel amounts but have `units = 0` in the transaction currency (or omit the transaction leg entirely). Need to decide whether to allow parallel-only entries or require a zero-valued transaction leg.
+
+5. **Effective balances:** Should period-bucketed effective balances also support parallel currency types? Needed for period-end reporting but can be deferred.
