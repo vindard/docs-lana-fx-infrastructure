@@ -94,18 +94,29 @@ Every journal line has both entered and accounted amounts.
 
 **Same-currency handling:** `ENTERED == ACCOUNTED` when currencies match.
 
-### 3.4 Common Pattern
+### 3.4 Ledger Platforms (Modern Treasury)
 
-All three systems share the same structural solution:
+Purpose-built ledger platforms take the multi-entry approach rather than parallel columns.
 
-> **Multiple currency columns per entry row, not multiple entry rows per currency.**
+**Modern Treasury** uses a more constrained model than CALA: accounts are currency-bound (each account has a mandatory `currency` field), so cross-currency transactions inherently require entries to different accounts. The exchange rate is stored as informational metadata on the transaction. This is structurally equivalent to the multiple-template approach (§7.1) but without the conditional routing — currency-bound accounts force the multi-entry pattern for every cross-currency transaction. The same balance conflation applies: USD entries from FX conversion land in the same balance as real USD transaction entries.
+
+Modern Treasury does not support parallel currency columns on entries.
+
+### 3.5 Common Pattern
+
+The ERP/GL systems (SAP, Dynamics, Oracle) share one structural solution; the ledger platforms (Modern Treasury, CALA) share another:
+
+> **ERP/GL systems:** Multiple currency columns per entry row, not multiple entry rows per currency.
+>
+> **Ledger platforms:** Multiple entry rows per currency, no parallel columns.
 
 | System | Transaction Amount | Parallel Amounts | Extra Rows per Currency? |
 |--------|--------------------|------------------|--------------------------|
 | SAP ACDOCA | `RWCUR/TSL` | Up to 9 parallel columns | No |
 | Dynamics 365 | `TransactionCurrencyAmount` | 2 parallel columns | No |
 | Oracle GL | `ENTERED_DR/CR` | 1 parallel column pair | No |
-| **CALA (current)** | `currency/units` | *(not available)* | **Yes — must add separate entries** |
+| Modern Treasury | Account-level currency | *(not available, rate in tx metadata)* | Yes |
+| **CALA** | `currency/units` | *(not available)* | **Yes** |
 
 ---
 
@@ -207,3 +218,118 @@ adjustment  = fair_value − book_value
 4. **Adjustment-only entries:** Some use cases (e.g. revaluation) adjust only a parallel currency balance without changing the transaction-currency balance. These entries would carry parallel amounts but have `units = 0` in the transaction currency (or omit the transaction leg entirely). Need to decide whether to allow parallel-only entries or require a zero-valued transaction leg.
 
 5. **Effective balances:** Should period-bucketed effective balances also support parallel currency types? Needed for period-end reporting but can be deferred.
+
+---
+
+## 7. Application-Level Approaches Without CALA Changes
+
+The following approaches are available today for tracking parallel currency amounts (e.g. functional-currency book values) using CALA as-is, without modifying the ledger library.
+
+### 7.1 Multiple Templates with Conditional Routing
+
+Create separate templates for same-currency and cross-currency cases. The application inspects the transaction at posting time and routes to the appropriate template.
+
+- Same-currency (e.g. USD deposit): `RECORD_DEPOSIT` — 2 entries, both in USD.
+- Cross-currency (e.g. EUR deposit): `RECORD_DEPOSIT_FX` — 4 entries (2 in EUR for the transaction amount, 2 in USD for the parallel equivalent).
+
+**Strengths:**
+- Parallel amounts participate in the CALA balance pipeline. Book value is queryable via `balances.find(journal, account, USD)`.
+- No CALA changes required.
+
+**Weaknesses:**
+- **Balance conflation:** The parallel USD entries land in the same `(journal, account, USD)` balance as actual USD transaction entries. If the account also receives real USD deposits, the balance mixes transaction amounts with book-value equivalents. In a banking application, a balance that cannot cleanly answer either "how many USD does this account hold?" or "what is the USD book value of the EUR position?" is a correctness problem — not merely an inconvenience.
+- Every template that involves foreign currency needs a variant. Template count doubles across the system.
+- The transaction-currency entries and their parallel equivalents are structurally independent — they share a transaction but have no intrinsic link.
+
+### 7.2 Entry or Transaction Metadata
+
+Store the parallel currency amount, currency code, and/or exchange rate in CALA's existing metadata fields. Both entries (`metadata: Option<serde_json::Value>`) and transactions support arbitrary metadata. No additional entries are created. The metadata is informational — it does not affect balances.
+
+Example entry-level metadata:
+```json
+{
+  "parallel_currency": "USD",
+  "parallel_amount": "66.00",
+  "exchange_rate": "1.10"
+}
+```
+
+**Strengths:**
+- Zero CALA changes. Zero template proliferation. Zero balance conflation.
+- Clean and simple — one template handles all currency cases.
+- The metadata is persisted atomically with the entry/transaction and is auditable.
+- The exchange rate is captured at the point of posting, providing a historical record.
+
+**Weaknesses:**
+- **The ledger is not the source of truth for parallel-currency positions.** Book value exists only in metadata — outside the balance pipeline, unqueryable, and not subject to CALA's balance validation or integrity guarantees. In a banking application, financial position data that bypasses the ledger's consistency model is a reliability concern.
+- Revaluation must scan entry metadata and aggregate book value externally (or maintain a separate tracking mechanism), duplicating logic that the balance pipeline already provides for transaction-currency amounts.
+- Introduces a second source of position data alongside CALA balances. Any consumer that needs book value must know to look in metadata rather than balances — a convention that must be maintained across the entire application.
+
+### 7.3 External Entity
+
+Like §7.2, this approach keeps book value outside the balance pipeline — but instead of co-locating it on the CALA entry as metadata, it moves it outside CALA entirely into an application-level domain entity. The distinction matters: with metadata (§7.2), the book value is at least persisted atomically with the entry — if the entry exists, the metadata exists. With an external entity, the CALA posting and the entity update are separate writes that must be explicitly coordinated.
+
+CALA records only the transaction-currency entries. A separate entity stores `(account, parallel_currency, book_value)` and is updated alongside each CALA posting.
+
+**Strengths:**
+- Zero CALA changes. Zero template proliferation. Zero balance conflation.
+- Clean separation of concerns — CALA does transaction accounting, the application does parallel-currency tracking.
+- The external entity can be purpose-built for its consumers (e.g. store the rate, the book value, and the last revaluation date together).
+
+**Weaknesses:**
+- **Split source of truth for financial positions.** Transaction-currency balances live in CALA; parallel-currency book values live in an application entity. In a banking application, having two systems that must agree on position data introduces drift risk — if one updates without the other, the financial picture is inconsistent.
+- **Atomicity concern.** The entity update and the CALA posting must be in the same database transaction to prevent drift. This may require sharing a transaction across CALA and the application database, adding infrastructure complexity.
+- Audit trails must span two systems. The ledger alone does not provide a complete picture of the entity's financial position — auditors and regulators must correlate data across systems to reconstruct book values.
+
+### 7.4 Separate Accounts
+
+Create parallel account pairs for each foreign-currency account: one for the transaction currency, one for the parallel-currency equivalent.
+
+- `EUR Deposit (transactional)` — receives EUR entries.
+- `EUR Deposit (parallel/USD)` — receives USD entries representing the parallel-currency book value.
+
+A single template posts to both accounts.
+
+This is the approach that Modern Treasury enforces by design (see §3.4). Their accounts are currency-bound, making separate accounts per currency mandatory. CALA is more permissive — accounts are currency-agnostic and can hold balances in any currency — but the application can choose to adopt the same convention by creating one account per currency and only posting entries in the matching currency. This effectively models Modern Treasury's approach on top of CALA.
+
+The benefit is that balance conflation (§7.1) is structurally prevented: USD book-value entries and USD transaction entries live on different accounts and cannot be summed together.
+
+**Strengths:**
+- Clean separation. Each account holds a single currency. No balance conflation.
+- Parallel amounts are in the balance pipeline, queryable via standard balance queries.
+
+**Weaknesses:**
+- **Chart of accounts integrity.** The conceptual identity of an account (e.g. "EUR Deposit Account") is split across two objects. In a banking application, an account that cannot be understood as a single entity complicates reconciliation, regulatory reporting, and operational procedures. Every query, report, and audit must join account pairs to reconstruct a complete view.
+- Chart of accounts doubles for every foreign-currency account. A system with 10 account types and 5 foreign currencies gains up to 50 additional accounts.
+- Account management complexity increases — creating, closing, or reconciling accounts requires operating on pairs.
+- **Convention without enforcement.** Modern Treasury's currency-bound accounts make the one-account-per-currency rule structural — the system rejects a mismatched posting. In CALA, the rule is a convention the application must enforce. Nothing in CALA prevents posting a USD entry to an account intended for EUR, so the correctness guarantee depends on application discipline rather than ledger constraints.
+
+### 7.5 Separate Layers
+
+Use CALA's existing layer mechanism to distinguish transaction-currency entries from parallel-currency equivalents. Transaction entries post on the `SETTLED` layer; parallel-currency equivalents post on a different layer (e.g. repurpose `ENCUMBRANCE`).
+
+**Strengths:**
+- Single template for all currency combinations.
+- Parallel amounts are in the balance pipeline, queryable per layer.
+- Structural separation — the layer distinguishes currency type.
+
+**Weaknesses:**
+- **Semantic corruption of the balance model.** CALA's `available()` rollup sums across layers: `available(Layer::Encumbrance) = settled + pending + encumbrance`. If encumbrance is repurposed for parallel currency, this rollup produces nonsensical cross-currency sums. In a banking application, a balance query that silently returns an incorrect number is worse than one that returns no data at all — it can drive incorrect decisions downstream.
+- Layers are designed for settlement lifecycle (Pending → Settled), not currency representation. Overloading them with an orthogonal concern means every consumer of layer-based balances must carry the convention of which layer means what — a leaky abstraction that invites misuse.
+- Consumes a layer slot. If the application later needs actual encumbrance or pending tracking for these accounts, there is a conflict with no clean resolution.
+
+### 7.6 Summary
+
+| Approach | Templates | Balance Conflation | Book Value in Ledger | Auditability | Complexity |
+|----------|-----------|-------------------|---------------------|--------------|------------|
+| 7.1 Multiple templates | 2x per FX template | **Yes** | Yes | Full (in ledger) | High (routing logic) |
+| 7.2 Entry metadata | 1x | No | **No** (metadata only) | Partial (metadata auditable, but no balance) | Low |
+| 7.3 External entity | 1x | No | **No** | Partial (split across systems) | Medium (sync concern) |
+| 7.4 Separate accounts | 1x | No | Yes | Full (in ledger) | High (account pairs) |
+| 7.5 Separate layers | 1x | No | Yes (but layer overloaded) | Full (in ledger) | Medium (layer convention) |
+
+Approaches 7.1, 7.4, and 7.5 put the parallel-currency book value inside the CALA balance pipeline — making the ledger the single source of truth — but each introduces structural overhead (template proliferation, account proliferation, or layer overloading).
+
+Approaches 7.2 and 7.3 keep CALA clean but move the book value outside the ledger, requiring the application to own parallel-currency aggregation and accept a split source of truth.
+
+The choice depends on how important it is that the ledger alone provides a complete, self-consistent view of both transaction-currency and parallel-currency positions.
