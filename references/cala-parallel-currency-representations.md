@@ -1,6 +1,6 @@
 # Parallel Currency Representations in CALA
 
-CALA's entry model stores a single `(currency, units)` pair per entry. When a ledger needs to represent the same economic event in multiple currencies — for example, recording both a 60 EUR deposit and its 66 USD book value — the application must create separate entries. This document examines whether that limitation matters, how major systems handle it, what workarounds exist today, and what it would take to close the gap.
+CALA's entry model stores a single `(currency, units)` pair per entry. There is no built-in way to record a parallel currency amount — such as the USD book value of a EUR deposit — on the same entry. This document examines whether that limitation matters, how major systems handle it, what workarounds exist today, and what it would take to close the gap.
 
 ---
 
@@ -16,12 +16,7 @@ CALA has strong multicurrency foundations. The gap is narrow and specific.
 
 **Entry-level metadata.** Each entry supports an arbitrary `metadata: Option<serde_json::Value>` field, persisted atomically with the entry and evaluable via CEL expressions in templates.
 
-**The gap.** Each entry carries one `(currency, units)` pair. To record both "60 EUR was deposited" and "that 60 EUR is worth 66 USD," the application must create separate entries — one for the transaction-currency amount, another for the parallel equivalent. This has four structural consequences:
-
-1. **Balance conflation.** Both entries feed into the same balance pipeline. A USD parallel balance (the book value of a EUR position) is summed with actual USD transaction balances on the same account, producing an incorrect result.
-2. **Template proliferation.** Every template that touches foreign currency needs a variant with additional entries. Template count multiplies.
-3. **Structural disconnection.** The transaction-currency entry and its parallel equivalent are independent rows with no intrinsic link. Correlating them requires application-level heuristics.
-4. **Same-currency degeneracy.** When the parallel currency equals the transaction currency, the parallel entries are exact duplicates. The application must route to a different template or accept redundant posting.
+**The gap.** Each entry carries one `(currency, units)` pair. There is no built-in way to record a parallel currency amount — such as the USD book value of a EUR transaction — alongside the transaction amount on the same entry. The primitives above (multi-currency transactions, metadata, layers, currency-agnostic accounts) can be composed into workarounds (§3), but CALA provides no dedicated mechanism for parallel currency tracking.
 
 ---
 
@@ -51,9 +46,14 @@ Five approaches are available today for tracking parallel currency amounts using
 
 ### 3.1 Multiple Templates with Conditional Routing
 
-Create separate templates for same-currency and cross-currency cases. A USD deposit uses `RECORD_DEPOSIT` (2 entries); a EUR deposit uses `RECORD_DEPOSIT_FX` (4 entries — 2 in EUR, 2 in USD). The application routes to the appropriate template at posting time.
+The most direct response to the gap: create additional entries to carry the parallel amounts. A USD deposit uses `RECORD_DEPOSIT` (2 entries); a EUR deposit uses `RECORD_DEPOSIT_FX` (4 entries — 2 in EUR for the transaction amount, 2 in USD for the parallel equivalent). The application inspects the currency at posting time and routes to the appropriate template.
 
-Parallel amounts participate in the balance pipeline — but **balance conflation** is the primary concern. The parallel USD entries land in the same `(journal, account, USD)` balance as actual USD transaction entries. A balance that cannot cleanly answer either "how many USD does this account hold?" or "what is the USD book value of the EUR position?" is a correctness problem. Beyond conflation, every template that involves foreign currency needs a variant (doubling template count), and the transaction-currency entries and their parallel equivalents are structurally independent with no intrinsic link.
+Parallel amounts enter the balance pipeline, but this directness comes with four structural costs:
+
+1. **Balance conflation.** The parallel USD entries land in the same `(journal, account, USD)` balance as actual USD transaction entries. A balance that cannot cleanly answer either "how many USD does this account hold?" or "what is the USD book value of the EUR position?" is a correctness problem.
+2. **Template proliferation.** Every template that involves foreign currency needs a variant. Template count doubles across the system.
+3. **Structural disconnection.** The transaction-currency entries and their parallel equivalents are independent rows with no intrinsic link — correlating them requires application-level heuristics.
+4. **Same-currency degeneracy.** When the parallel currency equals the transaction currency, the parallel entries are exact duplicates. The application must route to a different template or accept redundant posting.
 
 ### 3.2 Entry or Transaction Metadata
 
