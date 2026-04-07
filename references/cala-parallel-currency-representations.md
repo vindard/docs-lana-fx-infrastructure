@@ -101,6 +101,20 @@ Use CALA's layer mechanism to distinguish transaction-currency entries from para
 
 Approaches 3.1, 3.4, and 3.5 put book value inside the balance pipeline but introduce structural overhead — conflated balances, proliferated accounts, or corrupted layer semantics. Approaches 3.2 and 3.3 keep CALA clean but move book value outside the ledger, requiring the application to own aggregation and accept a split source of truth.
 
+### 3.6 Lifecycle Stress Test
+
+The summary above evaluates each approach against structural properties — template count, balance conflation, auditability. A complementary test is to apply the simplest approach (§3.2, entry metadata) to a full deposit lifecycle and observe where it holds and where it breaks. The EUR deposit walkthrough (`eur-deposit-conversion-revaluation-walkthrough.md`) provides this test: 16 steps spanning six operation types, with nine revaluations at eight different rates.
+
+**Deposits work cleanly.** A EUR deposit posts two entries (`Dr EUR Deposit / Cr EUR Omnibus`) with metadata carrying the USD equivalent and spot rate. No additional entries, no template variants. A USD deposit uses the same template — the parallel amount equals the transaction amount.
+
+**Revaluation has no entry to attach metadata to.** Revaluation adjusts only the USD book value of a EUR position — the EUR balance does not change. In the dual-entry approach (§3.1), this produces USD-only entries such as `Dr Unrealized FX Gain 1.20 USD / Cr EUR Deposit 1.20 USD`. With metadata, no EUR entry is being posted, so there is nothing to carry the adjustment. The application must either post synthetic zero-EUR entries as metadata carriers — entries that exist solely to hold a JSON field, outside the balance pipeline — or track revaluation state entirely outside CALA, collapsing into §3.3. The walkthrough runs nine revaluations; each one encounters this gap.
+
+**Conversion partially works but breaks realized gain/loss.** The EUR leg of a conversion (`Dr Trading 50 EUR / Cr EUR Deposit 50 EUR`) can carry the USD book value as metadata. However, the Trading account's ledger USD balance then reflects only the sale proceeds (57.50 Cr) with no book-value debit (57 Dr). The realized G/L clearing entry depends on Trading's USD balance being the net of book value in minus proceeds out. Without the book-value leg in the ledger, the clearing math does not work from balances — the application must read metadata to derive it.
+
+**Withdrawal and settlement encounter the same gap as revaluation.** Both operations require unwinding proportional revaluation — USD-only adjustments with no EUR movement. The walkthrough's withdrawal at step 9 posts six entries; four are USD-only with no EUR carrier for metadata. Settlement has the same structure.
+
+Of six operation types, only deposits map cleanly. Conversions partially work but require application-side derivation for realized G/L. Revaluation, withdrawal reval-unwind, and settlement reval-reversal all involve USD-only adjustments with no transaction-currency entry to carry metadata. The metadata approach works for initial booking but fails for the ongoing lifecycle — precisely the operations where parallel-currency tracking matters most.
+
 ---
 
 ## 4. Recommendation
