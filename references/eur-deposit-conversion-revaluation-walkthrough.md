@@ -867,11 +867,12 @@ Totals                              0        0     57.50    57.50  ✓
 
 ---
 
-## Addendum A: Rounding adjustment entries
+## Addendum A: Rounding in direct FX conversions
 
 The main walkthrough uses clean numbers that never produce sub-cent remainders.
 In practice, FX arithmetic often yields non-terminating decimals. This addendum
-shows how the `FX_ROUNDING_ADJUSTMENT` template handles the difference.
+analyzes whether a separate rounding adjustment entry is needed for direct
+conversions and concludes it is not.
 
 ### Setup
 
@@ -902,7 +903,7 @@ realized_gl         = 38.07 − 37.62 = 0.45 USD  (gain)
 ② Cr  EUR Deposit    33 EUR
 ③ Dr  Trading        37.62 USD     book value in functional currency
 ④ Cr  EUR Deposit    37.62 USD
-⑤ Dr  USD Cash       38.07 USD     rounded proceeds in target currency
+⑤ Dr  USD Cash       38.07 USD     rounded settlement amount
 ⑥ Cr  Trading        38.07 USD
 ```
 
@@ -913,43 +914,61 @@ realized_gl         = 38.07 − 37.62 = 0.45 USD  (gain)
 ⑧ Cr  Realized Gain  0.45 USD
 ```
 
-**Transaction 3 — `FX_ROUNDING_ADJUSTMENT`** (2 entries)
+No further entries are needed.
 
-```
-⑨ Dr  Rounding Differences  0.0021 USD   sub-cent remainder
-⑩ Cr  Trading               0.0021 USD
-```
-
-### Why rounding posts as a separate transaction
-
-The bank rounds the customer-facing amount conservatively (toward zero), so the
-customer receives 38.07 USD, not 38.08. The 0.0021 USD remainder is economically
-real — it represents value that entered the trading account (33 EUR worth 38.0721
-USD at market) but was not delivered to the target account. Without the rounding
-entry, Trading would retain a 0.0021 USD residual that would pollute realized G/L
-calculations and revaluations. The rounding template sweeps it into an equity
-account (FX Rounding Differences, 3210) where it accumulates harmlessly.
-
-### Trading account USD balance after all three transactions
+### Trading account USD balance
 
 ```
   +37.62  (book value in, entry ③)
   −38.07  (proceeds out, entry ⑥)
   + 0.45  (G/L clearing, entry ⑦)
-  − 0.0021 (rounding sweep, entry ⑩)
   ────────
-  −0.0021  ← would be exactly 0 without rounding; the 0.0021 was swept to Rounding Differences
+   0.00   ✓
 ```
 
-After the rounding sweep, Trading's USD balance is −0.0021 — but this is offset
-by the +0.0021 now sitting in Rounding Differences. In practice, both amounts
-are sub-cent and the Trading account's effective USD position is zero, which is
-the correct post-conversion state.
+### Why no rounding entry is needed for direct conversions
 
-> **Note:** The main walkthrough's Step 6 uses 50 EUR × 1.15 = 57.50 exactly,
-> so `rounding_difference = 0` and the rounding template is not triggered. Any
-> conversion where `source_amount × rate` is not exactly representable at the
-> target currency's precision will trigger it.
+**The 0.0021 does not exist as real money.** FX settlements are denominated in
+whole cents. The counterparty pays 38.07 USD — that is the actual cash that
+changes hands. The exact figure 38.0721 is an arithmetic intermediate, not an
+economic amount. Since 38.07 is what the bank received and what the customer is
+credited, the ledger correctly reflects reality with no residual to sweep.
+
+Realized G/L is computed on the **rounded settlement amount** (38.07 − 37.62 =
+0.45), which is the actual economic gain. The theoretical 0.4521 gain based on
+the unrounded amount includes 0.0021 of value that was never realized by anyone.
+
+This aligns with ERP industry practice. SAP, Dynamics 365, Oracle GL, and
+NetSuite all compute realized G/L on the rounded (delivered) amount. Their
+rounding/penny-difference accounts exist for a different class of problem —
+genuine ledger imbalances from cross-rate triangulation or multi-line invoice
+translation — not for the theoretical gap in a single direct conversion.
+
+### Rejected alternative: sweep rounding from Trading
+
+An earlier version of this addendum posted a third transaction to "sweep" the
+sub-cent residual out of Trading:
+
+```
+⑨ Dr  Rounding Differences  0.0021 USD
+⑩ Cr  Trading               0.0021 USD
+```
+
+This was flawed. G/L clearing (entry ⑦) already zeroes Trading using the rounded
+amount. The sweep takes Trading from 0.00 to −0.0021, **introducing** a residual
+rather than removing one. The entry has no natural source — it manufactures a
+debit in a suspense account against a credit in Trading for value that never
+existed on the ledger.
+
+An alternative formulation — computing G/L on the unrounded amount (0.4521) so
+that Trading lands at +0.0021 before the sweep — would fix the arithmetic but
+requires sub-cent precision in USD ledger entries. If the ledger enforces 2dp
+for USD, the unrounded G/L is silently rounded back to 0.45, collapsing to the
+same result as no rounding entry.
+
+If cross-rate triangulation or multi-line translation scenarios arise in the
+future, a rounding differences account and template can be introduced at that
+point.
 
 ---
 
@@ -957,13 +976,12 @@ the correct post-conversion state.
 
 _Analysis performed 2025-03-25 on branch `refactor/fx-accumulator-model` at commit `15e489bea`._
 
-### What we have (3 templates)
+### What we have (2 templates)
 
 | Template | File | Status |
 |---|---|---|
 | `FIAT_FX_CONVERSION_VIA_TRADING` | `core/fx/src/ledger/templates/fiat_fx_conversion.rs` | Present |
 | `REALIZED_FX_GAIN_LOSS` | `core/fx/src/ledger/templates/realized_fx_gain_loss.rs` | Present |
-| `FX_ROUNDING_ADJUSTMENT` | `core/fx/src/ledger/templates/fx_rounding_adjustment.rs` | Present (utility, not in walkthrough) |
 
 ### What's missing (3 templates)
 
@@ -987,7 +1005,7 @@ The current template only moves `source_amount` in `source_currency` and `target
 
 ### Summary
 
-- **3 templates present**, 1 of which (rounding) is a utility not in the walkthrough
+- **2 templates present**
 - **2–3 templates missing**: revaluation, settlement, and withdrawal reval-unwind coordination
 - **1 template wrong**: the conversion template is missing the critical book-value leg in functional currency, which breaks the Selinger accumulator flow
 

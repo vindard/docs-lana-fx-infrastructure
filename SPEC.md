@@ -509,9 +509,6 @@ The correct routing by currency type:
 ```
 EQUITY / FX
   3200  FX Trading Account           -- intermediary for fiat-to-fiat conversions ONLY
-  3210  FX Rounding Differences       -- suspense account for rounding variances
-                                      -- from cross-rate triangulation and
-                                      -- conversion rounding
 
 REVENUE
   4200  Realized FX Gain             -- closed fiat FX positions (permanent)
@@ -528,12 +525,6 @@ BTC FAIR VALUE (separate from FX)
   7200  BTC Fair Value Loss          -- ASU 2023-08: fair value decrease on platform-owned BTC
 ```
 
-The **FX Rounding Differences (3210)** account accumulates small variances that arise from:
-- Cross-rate triangulation (e.g., EUR→GBP via USD introduces rounding at each step)
-- Conversion rounding where debits and credits differ by fractions of a cent
-- Inverse rate calculations (`1/rate` is not perfectly reversible at finite precision)
-
-This account should be monitored and periodically cleared to P&L when balances exceed a materiality threshold.
 
 ### How Fiat Conversions Flow Through the Trading Account
 
@@ -1476,7 +1467,7 @@ Independent of Group C. **Phase 4 depends on Phase 3 and Group A**: Phase 3 esta
 
 #### Phase 3: Fiat FX Trading Account + Realized Gain/Loss
 
-- **C4 — Trading Account + Realized FX Accounts**: Add trading account (3200), rounding differences (3210), realized FX gain (4200), realized FX loss (5100), parameterized by `functional_currency`.
+- **C4 — Trading Account + Realized FX Accounts**: Add trading account (3200), realized FX gain (4200), realized FX loss (5100), parameterized by `functional_currency`.
 - **C4 — Fiat FX Conversion Template**: Create `fiat_fx_conversion_via_trading` template, route all fiat FX conversions through the trading account, post realized gain/loss on position closure.
 - No jobs required — fires inline on each fiat conversion.
 - Immediate value: every fiat FX conversion is properly routed and realized gains/losses are captured at transaction time.
