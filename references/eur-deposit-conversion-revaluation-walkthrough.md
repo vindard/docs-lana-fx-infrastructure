@@ -867,6 +867,92 @@ Totals                              0        0     57.50    57.50  ✓
 
 ---
 
+## Addendum A: Rounding adjustment entries
+
+The main walkthrough uses clean numbers that never produce sub-cent remainders.
+In practice, FX arithmetic often yields non-terminating decimals. This addendum
+shows how the `FX_ROUNDING_ADJUSTMENT` template handles the difference.
+
+### Setup
+
+Same state as just before Step 6, but with a different conversion rate.
+
+- Trading account holds 0 EUR / 0 USD
+- EUR Deposit holds 100 EUR / 114 USD (blended ledger rate 1.14)
+- Bank converts 33 EUR → USD at rate 1.1537
+
+### Arithmetic
+
+```
+source_amount       = 33 EUR
+target (exact)      = 33 × 1.1537 = 38.0721 USD
+target (rounded)    = 38.07 USD          (ToZero at 2 dp)
+rounding_difference = 38.0721 − 38.07 = 0.0021 USD
+
+book_value          = 33 × 1.14 = 37.62 USD
+realized_gl         = 38.07 − 37.62 = 0.45 USD  (gain)
+```
+
+### Entries
+
+**Transaction 1 — `FIAT_FX_CONVERSION_VIA_TRADING`** (6 entries)
+
+```
+① Dr  Trading        33 EUR        source currency out
+② Cr  EUR Deposit    33 EUR
+③ Dr  Trading        37.62 USD     book value in functional currency
+④ Cr  EUR Deposit    37.62 USD
+⑤ Dr  USD Cash       38.07 USD     rounded proceeds in target currency
+⑥ Cr  Trading        38.07 USD
+```
+
+**Transaction 2 — `REALIZED_FX_GAIN_LOSS`** (2 entries)
+
+```
+⑦ Dr  Trading        0.45 USD      realized G/L clearing
+⑧ Cr  Realized Gain  0.45 USD
+```
+
+**Transaction 3 — `FX_ROUNDING_ADJUSTMENT`** (2 entries)
+
+```
+⑨ Dr  Rounding Differences  0.0021 USD   sub-cent remainder
+⑩ Cr  Trading               0.0021 USD
+```
+
+### Why rounding posts as a separate transaction
+
+The bank rounds the customer-facing amount conservatively (toward zero), so the
+customer receives 38.07 USD, not 38.08. The 0.0021 USD remainder is economically
+real — it represents value that entered the trading account (33 EUR worth 38.0721
+USD at market) but was not delivered to the target account. Without the rounding
+entry, Trading would retain a 0.0021 USD residual that would pollute realized G/L
+calculations and revaluations. The rounding template sweeps it into an equity
+account (FX Rounding Differences, 3210) where it accumulates harmlessly.
+
+### Trading account USD balance after all three transactions
+
+```
+  +37.62  (book value in, entry ③)
+  −38.07  (proceeds out, entry ⑥)
+  + 0.45  (G/L clearing, entry ⑦)
+  − 0.0021 (rounding sweep, entry ⑩)
+  ────────
+  −0.0021  ← would be exactly 0 without rounding; the 0.0021 was swept to Rounding Differences
+```
+
+After the rounding sweep, Trading's USD balance is −0.0021 — but this is offset
+by the +0.0021 now sitting in Rounding Differences. In practice, both amounts
+are sub-cent and the Trading account's effective USD position is zero, which is
+the correct post-conversion state.
+
+> **Note:** The main walkthrough's Step 6 uses 50 EUR × 1.15 = 57.50 exactly,
+> so `rounding_difference = 0` and the rounding template is not triggered. Any
+> conversion where `source_amount × rate` is not exactly representable at the
+> target currency's precision will trigger it.
+
+---
+
 ## Implementation gap analysis
 
 _Analysis performed 2025-03-25 on branch `refactor/fx-accumulator-model` at commit `15e489bea`._
