@@ -1,7 +1,7 @@
 # FX Infrastructure: Implementation Status & Gaps
 
 *Living document — updated as gaps are resolved and new ones identified.*
-*Originally consolidated 2026-03-30. Last updated 2026-04-07.*
+*Originally consolidated 2026-03-30. Last updated 2026-04-08.*
 *Supersedes `group-b-waiting-on-group-a.md` in this directory and the date-stamped gap/dependency docs in `ephemeral/2026-03-24/`, `2026-03-25/`, `2026-03-29/`.*
 
 ### Architectural principles for this document
@@ -50,14 +50,15 @@ These PRs have merged and form the foundation for the remaining work:
 
 | PR / Branch | Author | Status | Relevance |
 |-------------|--------|--------|-----------|
-| #4552 `refactor/fx-accumulator-model` | vindard | Draft | **Phase 3:** FxPosition accumulator, FxConversion, trading account templates, settlement. Rebased 2026-03-31 (7 commits). Has structural gaps listed below. |
-| #4430 `chore/trading-accounts` | (multiple) | Draft | **core/fx crate scaffolding:** Creates `core/fx` with primitives, FX ledger module, fiat conversion template, chart of accounts integration, CoreFx public API wiring, RBAC. Prerequisite for #4552. |
-| #4697 `chore--use-calculation-amount` | nsandomeno | Draft | **Largely superseded by #4817.** Originally refactored `ExchangeRate` and `ReferenceRate` with generics, `Rate` enum, `CalculationAmount` arithmetic. #4817 landed most of this work (generic `ExchangeRate<Base, Quote>`, `Rate` enum, `AnyReferenceRate`). Review discussion (jirijakes: rounding outside conversion, rename `carrying_amount_for`; Prabhat1308: rounding strategy) was incorporated into #4817. May still have residual naming/API changes not yet in #4817. |
-| #4735 `refactor/currency-denomination-split` | (unknown) | Closed | Explored separating currency identity from ISO denomination (spawned from #4697 discussion). Concluded ISO decimal precision belongs on currency; rounding strategy does not. Closed without merge but informed #4697/#4817 direction. |
+| #4430 `chore/trading-accounts` | vindard | Draft | **core/fx crate scaffolding:** Creates `core/fx` with primitives, FX ledger module, fiat conversion template, chart of accounts integration, CoreFx public API wiring, RBAC. Base for #4957. |
+| #4957 `refactor/fx-position-foundation` | vindard | Open | **Phase 3 foundation:** Domain primitives (`ExchangeRate`, `FxConversion`, `FunctionalRate`, `RealizedGainLoss`), event-sourced `FxPosition` entity with Selinger accumulator. Bases on #4430. Replaces #4552. |
+| #4958 `refactor/fx-conversion-flow` | vindard | Open | **Phase 3 orchestration:** CALA templates (`FiatFxConversionViaTrading`, `RealizedFxGainLoss`, `FxSettlement`), `CoreFx::convert_fiat_fx()` and `CoreFx::settle_fx()` orchestration. Bases on #4957. No rounding adjustment template or 3210 account — consistent with updated spec. |
+| #4923 `feat/exchange-rate-history` | Prabhat1308 | Open | **Rate History exploration.** Relevant to Gap 1 (historical rate lookup). |
+| #4697 `chore--use-calculation-amount` | nsandomeno | Draft | **Largely superseded by #4817.** May still have residual naming/API changes not yet in #4817. |
 | #4686 `refactor--deposit-multicurrency-w-export-sumsub-deposit` | nsandomeno | Draft | Follow-up to #4671: multi-currency support in sumsub deposit export. |
 | #4700 `feat/lana-admin-price-provider-control` | sebastienverreault | Draft | Admin UI for price provider configuration. Tangential to FX infrastructure. |
-| #4869 `refactor--breakout-rate-lookup-use-cases` | nsandomeno | Closed | **Closed 2026-04-07 without merge.** Was separating historical rate lookup from spot lookup using `ADD_COLLATERAL` as iteration surface. Introduced `find_nearest_historical_exchange_rate`. See closed PRs table for context. |
-| #4757 `task/lana-ec-impl-019d4a85` | bodymindarts | Draft | **Eventually consistent account sets with EOD recalculation.** Pins cala-ledger to EC branch, sets `eventually_consistent(true)` on all account sets, adds `RecalculateAccountSetBalances` as last EOD phase. Eliminates advisory-lock contention on account set balance rows. Infrastructure improvement tangential to FX but relevant to multi-currency throughput. |
+| #4757 `task/lana-ec-impl-019d4a85` | bodymindarts | Draft | **Eventually consistent account sets with EOD recalculation.** Eliminates advisory-lock contention on account set balance rows. Infrastructure improvement tangential to FX but relevant to multi-currency throughput. |
+| #4821 `btc-collateral-revaluation` | jirijakes | Open | **BTC collateral revaluation.** Uses FX rate infrastructure. Tangential but relevant. |
 
 ---
 
@@ -76,8 +77,8 @@ These PRs have merged and form the foundation for the remaining work:
 **What still needs to happen:**
 - Support arbitrary fiat pairs (EUR/USD, GBP/USD, etc.) — the new `ExchangeRate<Base, Quote>` type supports this structurally, but no fiat rate source adapter exists yet (only BTC price providers)
 - A fiat rate source adapter (or multiple) should supply fiat FX rates
-- Historical rate storage and lookup — #4869 explored `find_nearest_historical_exchange_rate` but was closed without merge; this remains an open problem
-- `as_of: None` → latest rate; `as_of: Some(...)` → historical lookup (no active PR)
+- Historical rate storage and lookup — #4869 explored `find_nearest_historical_exchange_rate` but was closed without merge; **#4923** (Prabhat1308) is now exploring rate history
+- `as_of: None` → latest rate; `as_of: Some(...)` → historical lookup (#4923 exploring)
 
 **Important:** This is an application-service-layer concern, not a template dependency. Ledger templates receive rate values as parameters — they do not call rate services. Templates (Gap 2, Gap 3) can be built and tested with placeholder rate values without Gap 1 being resolved. Gap 1 is needed when the application service orchestrates real conversions in production.
 
@@ -112,7 +113,7 @@ Without these, `balance_functional` doesn't exist in the ledger. Revaluation nee
 **Severity:** Blocking — accumulator records wrong cost basis
 **Depends on:** Nothing at the template layer (receives `book_value` as a parameter)
 **Runtime data dependency:** Gap 2 (omnibus must have USD balances for the application service to compute meaningful book values)
-**Branch:** `refactor/fx-accumulator-model`
+**PRs:** #4958 adds the book-value leg to the template; runtime correctness still depends on Gap 2
 
 The walkthrough requires 8 entries on conversion; the template has 4. Missing entries 7-8:
 
@@ -164,10 +165,10 @@ After:   core/price ← core/fx ← core/deposit, core/credit
 **Module:** `core/fx/src/ledger/mod.rs`
 **Severity:** Significant — no audit trail on FX transactions
 **Depends on:** Nothing at the template layer (metadata is JSON params on CALA templates)
-**Branch:** `refactor/fx-accumulator-model`
+**PRs:** #4958 (templates exist but metadata params not yet added)
 **Layer:** Template layer (template design) + Application service (constructing metadata structs)
 
-`post_fx_conversion_in_op` has no `reference_rate` in its metadata JSON. Should follow the pattern #4559 established on `RECORD_DEPOSIT`. Also needed on `FX_SETTLEMENT`, `REALIZED_FX_GAIN_LOSS`, and `FX_ROUNDING_ADJUSTMENT` templates.
+`post_fx_conversion_in_op` has no `reference_rate` in its metadata JSON. Should follow the pattern #4559 established on `RECORD_DEPOSIT`. Also needed on `FX_SETTLEMENT` and `REALIZED_FX_GAIN_LOSS` templates.
 
 **Template can be built now** — add JSON metadata params to accept rate info. Gap 4 (type migration) affects where the application service *constructs* the metadata struct, not how the template receives it.
 
@@ -178,28 +179,28 @@ After:   core/price ← core/fx ← core/deposit, core/credit
 **Module:** `core/fx/src/lib.rs`, `core/fx/src/primitives.rs`
 **Severity:** Significant
 **Depends on:** Gap 4 (at the service layer — rate types must live in core/fx for the orchestrator to use them)
-**Branch:** `refactor/fx-accumulator-model`
+**PRs:** #4957 introduces `ExchangeRate` and `FxConversion` primitives in core/fx; Gap 4 migration still needed for full rate service access
 **Layer:** Application service
 
 `FxConversion::new()` takes the local `ExchangeRate` (computation type). Once rate types live in `core/fx`, the orchestrator can use the fx module's own rate service to look up rates and pass both the computation rate and the metadata rate into the conversion flow.
 
 ---
 
-## Branch-specific shortcomings (`refactor/fx-accumulator-model`)
+## Branch-specific shortcomings (from #4552, tracked for #4957/#4958)
 
-Beyond the Group A gaps above, the unmerged fx branch has these issues:
+The original #4552 branch had these issues. #4957 and #4958 address several; remaining items are tracked here.
 
 | # | Shortcoming | Severity | Status |
 |---|-------------|----------|--------|
 | S1 | Position records conversion rate as cost basis, not book value | Critical | Open (needs Gap 3 template + Gap 2 runtime data) |
 | S2 | No realized G/L for foreign→functional conversions (EUR→USD only triggers inflow, not outflow) | Critical | Open (needs Gap 3 template + Gap 2 runtime data) |
-| S3 | Foreign→foreign conversions corrupt accumulator (GBP passed as "functional amount") | Critical | Open |
-| S4 | No settlement template | Significant | **Resolved** (added in later commits on branch) |
-| S5 | No guard against same-currency conversion | Minor | **Resolved** |
-| S6 | Position uses `String` for currency instead of typed `Currency` | Minor | Open |
+| S3 | Foreign→foreign conversions corrupt accumulator (GBP passed as "functional amount") | Critical | **Addressed in #4957** — `FxConversion` rejects BTC and same-currency pairs; verify Fgn→Fgn handling |
+| S4 | No settlement template | Significant | **Resolved in #4958** — `FxSettlement` template added |
+| S5 | No guard against same-currency conversion | Minor | **Resolved in #4957** — `FxConversion` rejects same-currency |
+| S6 | Position uses `String` for currency instead of typed `Currency` | Minor | **Addressed in #4957** — uses typed domain primitives |
 | S7 | No `Idempotent<T>` / `idempotency_guard!` on position commands | Minor | **Resolved** (`f646a6a62`) |
 
-S3 is independent of Group A and can be fixed on the branch now. S2 is blocked by Gap 3 (see "Position accumulator routing reference" below).
+S1 and S2 remain blocked on Gap 2 + Gap 3 runtime data.
 
 ---
 
@@ -240,12 +241,14 @@ Architectural:
 - Gap 2 (**now unblocked** — #4671 merged, can add dual-currency entry legs)
 - Gap 3 (no template dependency — accepts book_value as parameter)
 - Gap 5 (no template dependency — add JSON metadata params)
-- S3 (branch fix, independent of Group A)
 
 **Parallelizable now (other layers):**
-- Gap 1 (application-layer — #4817 landed typed rate infrastructure; fiat rate source adapter and historical lookup still needed)
+- Gap 1 (application-layer — #4817 landed typed rate infrastructure; #4923 exploring rate history; fiat rate source adapter still needed)
 - Gap 4 (architectural, no runtime dependency — prerequisite cleanup landed in #4817, migration itself remains)
-- #4430 (core/fx crate scaffolding — prerequisite for #4552)
+
+**PR chain in review:**
+- #4430 (core/fx scaffolding) ← #4957 (foundation types) ← #4958 (orchestration)
+- #4957/#4958 already clean — no rounding template or 3210 account (consistent with updated spec)
 
 ---
 
@@ -313,7 +316,7 @@ inflow for EUR→USD at the position level.
 
 **Gap 5** (no template dependency):
 - Add `reference_rate` JSON metadata params to FX_CONVERSION, FX_SETTLEMENT,
-  REALIZED_FX_GAIN_LOSS, and FX_ROUNDING_ADJUSTMENT templates
+  and REALIZED_FX_GAIN_LOSS templates
 - Follow pattern from #4559 on RECORD_DEPOSIT
 
 ### Application service layer — wiring real values
@@ -340,10 +343,20 @@ inflow for EUR→USD at the position level.
 - Wire core/price as a rate source adapter
 - Enables: Gap 5 service layer (constructing metadata structs), Gap 6
 
+### Rounding adjustment decision
+
+Analysis (see walkthrough Addendum A) concluded that direct single-rate conversions produce no
+rounding residual — G/L clearing on the rounded settlement amount already zeroes Trading. The
+3210 account and `FX_ROUNDING_ADJUSTMENT` template have been removed from the SPEC and walkthrough.
+#4957/#4958 are already clean: no rounding adjustment template, account, or ledger posting references.
+The only rounding code is `ExchangeRate::convert()` returning a `rounding_diff` as part of core
+conversion arithmetic (intentionally unused by `FxConversion`). If cross-rate triangulation or
+multi-line translation scenarios arise later, a rounding account can be reintroduced.
+
 ### Branch fixes
 
-- **S3**: Foreign→foreign accumulator corruption — independent, fixable now
-- **S6**: Position uses `String` for currency instead of typed `Currency` — independent
+- **S3**: Verify Fgn→Fgn handling in #4957 — `FxConversion` rejects BTC and same-currency but confirm cross-foreign pairs work correctly
+- **S1/S2**: Remain blocked on Gap 2 + Gap 3 runtime data
 
 ---
 
@@ -351,6 +364,7 @@ inflow for EUR→USD at the position level.
 
 | PR | Title | Why closed |
 |----|-------|-----------|
+| #4552 | feat(fx): add FX conversion domain logic with position tracking and realized G/L | **Closed 2026-04-08.** Superseded by #4957 (foundation types) + #4958 (orchestration). Split into two stacked PRs for reviewability. |
 | #4642 | feat(price): price snapshot with provider provenance tracking | Deferred — sandipndev noted "would need to implement better price fetching first" |
 | #4463 | explore: rate per transaction (FX Infrastructure Component #3) | Exploratory — superseded by #4559 approach |
 | #4560 | chore(fx): add lot-based FIFO position tracking | Superseded by accumulator approach in #4552 |
