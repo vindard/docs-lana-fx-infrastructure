@@ -1,7 +1,7 @@
 # FX Infrastructure: Implementation Status & Gaps
 
 *Living document — updated as gaps are resolved and new ones identified.*
-*Originally consolidated 2026-03-30. Last updated 2026-04-08.*
+*Originally consolidated 2026-03-30. Last updated 2026-04-09T01:13Z.*
 *Supersedes `group-b-waiting-on-group-a.md` in this directory and the date-stamped gap/dependency docs in `ephemeral/2026-03-24/`, `2026-03-25/`, `2026-03-29/`.*
 
 ### Architectural principles for this document
@@ -40,9 +40,11 @@ These PRs have merged and form the foundation for the remaining work:
 | #4668 | (latest) | 2026-03-29 | `try_from_major_truncated` for precision-tolerant conversions |
 | #4671 | thevaibhav-dixit | 2026-04-01 | **Multi-currency deposit threading:** `AnyCurrencyUnits`, currency-aware ledger templates, deposit/withdrawal entity currency threading, migration from `UsdCents` to flexible JSON-based amount representation. Unblocks Gap 2. |
 | #4817 | bodymindarts | 2026-04-03 | **Per-provider price fetch + typed ExchangeRate:** Introduces generic `ExchangeRate<Base, Quote>` using `CalculationAmount`, `PriceClient` trait for per-provider fetch jobs, `ReferenceRate` and `AnyReferenceRate` for currency-generic rate handling, `Rate` enum (base vs quote expression), stores `reference_rate` in ledger transaction metadata. Subsumes most of #4697's work. 62 files, 1479 insertions. Replaces `PriceOfOneBTC` newtype with typed exchange rate. Rollup schemas migrated to JSONB for price fields. |
-| #4815 | (deposit) | 2026-04-03 | Publish all withdrawal events to outbox |
-| #4703 | (credit) | 2026-04-07 | Do not emit events for closed facilities |
-| #4556 | (dagster) | 2026-04-07 | Drive Dagster as an EOD process |
+| #4815 | Lakshyyaa | 2026-04-06 | Publish all withdrawal events to outbox |
+| #4857 | Lakshyyaa | 2026-04-06 | Publish all disbursal events to outbox |
+| #4703 | (credit) | 2026-04-06 | Do not emit events for closed facilities |
+| #4556 | (dagster) | 2026-04-06 | Drive Dagster as an EOD process |
+| #4709 | siddhart1o1 | 2026-04-08 | Split `ManualTransaction` into Draft and Transaction — accounting-adjacent refactor |
 
 ---
 
@@ -51,14 +53,19 @@ These PRs have merged and form the foundation for the remaining work:
 | PR / Branch | Author | Status | Relevance |
 |-------------|--------|--------|-----------|
 | #4430 `chore/trading-accounts` | vindard | Draft | **core/fx crate scaffolding:** Creates `core/fx` with primitives, FX ledger module, fiat conversion template, chart of accounts integration, CoreFx public API wiring, RBAC. Base for #4957. |
-| #4957 `refactor/fx-position-foundation` | vindard | Open | **Phase 3 foundation:** Domain primitives (`ExchangeRate`, `FxConversion`, `FunctionalRate`, `RealizedGainLoss`), event-sourced `FxPosition` entity with Selinger accumulator. Bases on #4430. Replaces #4552. |
-| #4958 `refactor/fx-conversion-flow` | vindard | Open | **Phase 3 orchestration:** CALA templates (`FiatFxConversionViaTrading`, `RealizedFxGainLoss`, `FxSettlement`), `CoreFx::convert_fiat_fx()` and `CoreFx::settle_fx()` orchestration. Bases on #4957. No rounding adjustment template or 3210 account — consistent with updated spec. |
-| #4923 `feat/exchange-rate-history` | Prabhat1308 | Open | **Rate History exploration.** Relevant to Gap 1 (historical rate lookup). |
-| #4697 `chore--use-calculation-amount` | nsandomeno | Draft | **Largely superseded by #4817.** May still have residual naming/API changes not yet in #4817. |
-| #4686 `refactor--deposit-multicurrency-w-export-sumsub-deposit` | nsandomeno | Draft | Follow-up to #4671: multi-currency support in sumsub deposit export. |
-| #4700 `feat/lana-admin-price-provider-control` | sebastienverreault | Draft | Admin UI for price provider configuration. Tangential to FX infrastructure. |
+| #4957 `refactor/fx-position-foundation` | vindard | Draft | **Phase 3 foundation:** Domain primitives (`ExchangeRate`, `FxConversion`, `FunctionalRate`, `RealizedGainLoss`), event-sourced `FxPosition` entity with Selinger accumulator. Bases on #4430. Replaces #4552. No human review yet. |
+| #4958 `refactor/fx-conversion-flow` | vindard | Draft | **Phase 3 orchestration:** CALA templates (`FiatFxConversionViaTrading`, `RealizedFxGainLoss`, `FxSettlement`), `CoreFx::convert_fiat_fx()` and `CoreFx::settle_fx()` orchestration. Bases on #4957. No human review yet. |
+| #4970 `refactor/fx-settlement-book-value` | vindard | Draft | **Phase 3 completion (NEW):** Settlement book-value leg (FX_SETTLEMENT expanded 2→4 entries), `OutflowResult` struct from position outflow, `AnyReferenceRate` metadata on all 3 FX templates. Adds `core-price` dep to `core-fx`. Chain: #4430→#4957→#4958→**#4970**. Addresses Gap 5 and part of Gap 3. |
+| #4960 `refactor--templates-with-rates` | nsandomeno | Draft | **Non-functional currency deposit template (NEW):** `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs, separate `record_any_currency_deposit` use-case, spot vs historical rate separation in `core/price`. Addresses Gap 2. Active review from vindard (naming, omnibus account selection, rate API naming via IAS 21 "translation" concept). |
+| #4923 `feat/exchange-rate-history` | Prabhat1308 | Draft | **Rate History exploration.** `AggregatePriceHandler` delivers to `exchange_rates` table and ephemeral outbox. Relevant to Gap 1 (historical rate lookup). Reviewers requested: nsandomeno, vindard. |
+| #4959 `collateral-lot-tracking` | jirijakes | Draft | **Collateral lot tracking (NEW).** 2206 additions. Companion to #4821. Tangential but uses FX rate infrastructure. |
+| #4697 `chore--use-calculation-amount` | nsandomeno | Draft | **Largely superseded by #4817.** Stalled since 2026-04-01. May still have residual naming/API changes not yet in #4817. |
+| #4686 `refactor--deposit-multicurrency-w-export-sumsub-deposit` | nsandomeno | Draft | Follow-up to #4671: multi-currency support in sumsub deposit export. Stalled since 2026-03-30. |
+| #4700 `feat/lana-admin-price-provider-control` | sebastienverreault | Draft | Admin UI for price provider configuration. Actively updated 2026-04-08. Tangential to FX infrastructure. |
 | #4757 `task/lana-ec-impl-019d4a85` | bodymindarts | Draft | **Eventually consistent account sets with EOD recalculation.** Eliminates advisory-lock contention on account set balance rows. Infrastructure improvement tangential to FX but relevant to multi-currency throughput. |
 | #4821 `btc-collateral-revaluation` | jirijakes | Open | **BTC collateral revaluation.** Uses FX rate infrastructure. Tangential but relevant. |
+| #4350 `ExchangeRate<From, To>` | bodymindarts | Open | **Generic ExchangeRate type exploration.** Stale since 2026-03-14. Largely superseded by #4817. |
+| #4365 `deposit currency field` | bodymindarts | Open | **Deposit account currency field.** Stale since 2026-03-16. Largely superseded by #4616/#4671. |
 
 ---
 
@@ -70,15 +77,18 @@ These PRs have merged and form the foundation for the remaining work:
 
 `Price::exchange_rate_as_of()` returns `Err(UnsupportedExchangeRatePair)` for any pair where base != quote. The method signature takes `impl StaticCurrency`, which only covers the compile-time `Usd` and `Btc` types. It cannot accept fiat currencies (EUR, GBP, etc.) represented via the newer `CurrencyCode` / `AnyCurrency` types from `lib/money`.
 
-**Progress since last update:**
+**Progress since last update (2026-04-08T14:35Z):**
 - **#4817 (merged 2026-04-03)** significantly advances this gap: introduces generic `ExchangeRate<Base, Quote>` with `StaticCurrency` type params, `AnyReferenceRate` for currency-generic rate handling, `PriceClient` trait for per-provider fetching, and `Rate` enum (base vs quote expression). The old `PriceOfOneBTC` newtype is replaced by typed exchange rates.
 - **#4869 (closed 2026-04-07 without merge)** explored rate lookup separation: `find_nearest_historical_exchange_rate` for historical lookups vs spot. Approach may be reattempted differently.
+- **#4960 (draft, nsandomeno)** introduces spot vs historical rate separation in `core/price` with `find_nearest_historical_exchange_rate` and separate use-cases. vindard reviewed naming, suggesting IAS 21 "translation" terminology (`CurrencyTranslation` instead of `ReferenceRate`, `translation_at_nearest_historical_rate` instead of `find_nearest_historical_rate`).
+- **#4923 (draft, Prabhat1308)** exploring rate history: `AggregatePriceHandler` now delivers aggregated prices to `exchange_rates` table and ephemeral outbox.
 
 **What still needs to happen:**
 - Support arbitrary fiat pairs (EUR/USD, GBP/USD, etc.) — the new `ExchangeRate<Base, Quote>` type supports this structurally, but no fiat rate source adapter exists yet (only BTC price providers)
 - A fiat rate source adapter (or multiple) should supply fiat FX rates
-- Historical rate storage and lookup — #4869 explored `find_nearest_historical_exchange_rate` but was closed without merge; **#4923** (Prabhat1308) is now exploring rate history
-- `as_of: None` → latest rate; `as_of: Some(...)` → historical lookup (#4923 exploring)
+- Historical rate storage and lookup — #4960 and #4923 both actively exploring this from different angles
+- `as_of: None` → latest rate; `as_of: Some(...)` → historical lookup
+- Naming convention alignment — vindard's review on #4960 proposes IAS 21 "translation" terminology to disambiguate rate lookup from rate-applied-to-amount
 
 **Important:** This is an application-service-layer concern, not a template dependency. Ledger templates receive rate values as parameters — they do not call rate services. Templates (Gap 2, Gap 3) can be built and tested with placeholder rate values without Gap 1 being resolved. Gap 1 is needed when the application service orchestrates real conversions in production.
 
@@ -105,15 +115,22 @@ Without these, `balance_functional` doesn't exist in the ledger. Revaluation nee
 
 **Affected templates:** `RECORD_DEPOSIT` (has `ReferenceRate` metadata from #4559, needs USD entry legs), `RECORD_WITHDRAWAL`, `FIAT_FX_CONVERSION_VIA_TRADING` (unique: USD leg source is proportional book cost, not spot rate).
 
+**Progress since last update (2026-04-08T14:35Z):**
+- **#4960 (draft, nsandomeno)** directly addresses this gap: introduces `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs and a separate `record_any_currency_deposit` use-case in `CoreDeposit`. 743 additions. Active review from vindard covering:
+  - Omnibus account selection should key on transaction currency code (not functional currency) — fix pushed in `bd33bf3`
+  - Account set specs could be generated from a cross-product of enabled currencies rather than manual constants
+  - Need a `validate_account_for_deposit` function for currency correctness checks
+  - Template naming: `AnyCurrency` prefix under discussion (vindard suggested `MultiCurrency`)
+
 ---
 
-## Gap 3: Missing book-value leg on FX conversion template
+## Gap 3: Missing book-value leg on FX conversion and settlement templates
 
-**Module:** `core/fx/src/ledger/templates/fiat_fx_conversion.rs`
+**Module:** `core/fx/src/ledger/templates/fiat_fx_conversion.rs`, `core/fx/src/ledger/templates/fx_settlement.rs`
 **Severity:** Blocking — accumulator records wrong cost basis
 **Depends on:** Nothing at the template layer (receives `book_value` as a parameter)
 **Runtime data dependency:** Gap 2 (omnibus must have USD balances for the application service to compute meaningful book values)
-**PRs:** #4958 adds the book-value leg to the template; runtime correctness still depends on Gap 2
+**PRs:** #4958 adds the book-value leg to the conversion template; **#4970 adds the settlement book-value leg**; runtime correctness still depends on Gap 2
 
 The walkthrough requires 8 entries on conversion; the template has 4. Missing entries 7-8:
 
@@ -125,6 +142,10 @@ The walkthrough requires 8 entries on conversion; the template has 4. Missing en
 The book value (`55.40`) is computed by the application service as `(converted_eur / total_eur_in_omnibus) × omnibus_usd_balance` and passed to the template as a parameter. The template itself does not read account balances or call other services.
 
 This is the core of shortcoming #1 from the branch review: the accumulator currently records the conversion-rate amount (57.50) as functional cost instead of the book-value amount (55.00). The 2.50 difference is realized G/L that should not be in the cost basis.
+
+**Progress since last update (2026-04-08T14:35Z):**
+- **#4970 (draft, vindard)** adds the settlement book-value leg: FX_SETTLEMENT expanded from 2→4 entries — original foreign-currency delivery plus new USD book-value transfer (Dr Counterparty / Cr Trading in functional currency). New `OutflowResult { realized_gain_loss, proportional_book_value }` struct returned from `record_outflow`, threading `settlement_book_value` from position outflow → ledger → `FxSettlementResult`.
+- Conversion template book-value leg remains in #4958.
 
 **Template can be built and tested now with placeholder book values.** Correct runtime values require Gap 2's dual-currency entries so the omnibus has a USD balance to read.
 
@@ -165,12 +186,15 @@ After:   core/price ← core/fx ← core/deposit, core/credit
 **Module:** `core/fx/src/ledger/mod.rs`
 **Severity:** Significant — no audit trail on FX transactions
 **Depends on:** Nothing at the template layer (metadata is JSON params on CALA templates)
-**PRs:** #4958 (templates exist but metadata params not yet added)
+**PRs:** ~~#4958 (templates exist but metadata params not yet added)~~ → **#4970 addresses this**
 **Layer:** Template layer (template design) + Application service (constructing metadata structs)
 
 `post_fx_conversion_in_op` has no `reference_rate` in its metadata JSON. Should follow the pattern #4559 established on `RECORD_DEPOSIT`. Also needed on `FX_SETTLEMENT` and `REALIZED_FX_GAIN_LOSS` templates.
 
-**Template can be built now** — add JSON metadata params to accept rate info. Gap 4 (type migration) affects where the application service *constructs* the metadata struct, not how the template receives it.
+**Progress since last update (2026-04-08T14:35Z):**
+- **#4970 (draft, vindard)** adds `AnyReferenceRate` to `FiatFxConversionParams`, `RealizedFxGainLossParams`, and `FxSettlementParams`. Serialized into transaction `meta` JSON as `"reference_rate"`, matching the deposit template pattern from #4559. Adds `core-price` dependency to `core-fx`. **This gap is addressed at the template layer pending merge of #4970.**
+
+Gap 4 (type migration) still affects where the application service *constructs* the metadata struct, not how the template receives it.
 
 ---
 
@@ -238,17 +262,18 @@ Architectural:
 ```
 
 **Parallelizable now (template layer):**
-- Gap 2 (**now unblocked** — #4671 merged, can add dual-currency entry legs)
-- Gap 3 (no template dependency — accepts book_value as parameter)
-- Gap 5 (no template dependency — add JSON metadata params)
+- Gap 2 — **actively in progress** via #4960 (nsandomeno): `AnyCurrencyRecordDeposit` with dual-currency legs
+- Gap 3 — conversion book-value leg in #4958; settlement book-value leg in #4970
+- Gap 5 — **addressed** in #4970: rate metadata on all 3 FX templates (pending merge)
 
 **Parallelizable now (other layers):**
-- Gap 1 (application-layer — #4817 landed typed rate infrastructure; #4923 exploring rate history; fiat rate source adapter still needed)
+- Gap 1 (application-layer — #4817 landed typed rate infrastructure; #4960 adding spot/historical separation; #4923 exploring rate history; fiat rate source adapter still needed)
 - Gap 4 (architectural, no runtime dependency — prerequisite cleanup landed in #4817, migration itself remains)
 
 **PR chain in review:**
-- #4430 (core/fx scaffolding) ← #4957 (foundation types) ← #4958 (orchestration)
-- #4957/#4958 already clean — no rounding template or 3210 account (consistent with updated spec)
+- #4430 (core/fx scaffolding) ← #4957 (foundation types) ← #4958 (orchestration) ← #4970 (settlement book-value + rate metadata)
+- All drafts, no human review yet on #4957/#4958/#4970
+- #4960 (deposit dual-currency template) has active review from vindard
 
 ---
 
@@ -300,30 +325,30 @@ inflow for EUR→USD at the position level.
 
 ### Template layer — buildable now with placeholder values
 
-**Gap 2** (**UNBLOCKED** — #4671 merged 2026-04-01):
-- Add functional-currency (USD) entry legs to RECORD_DEPOSIT, RECORD_WITHDRAWAL,
-  FIAT_FX_CONVERSION_VIA_TRADING
-- Template receives the converted USD amount as a parameter
-- Test with hardcoded rate values
+**Gap 2** — **IN PROGRESS** via #4960 (nsandomeno):
+- `AnyCurrencyRecordDeposit` template with dual-currency entry legs — draft open, under review
+- Remaining: RECORD_WITHDRAWAL, FIAT_FX_CONVERSION_VIA_TRADING still need dual-currency legs
+- Open design questions from review: template naming (`AnyCurrency` vs `MultiCurrency`), account set spec generation from currency cross-product, deposit validation function
 - #4671 delivered currency-aware templates and `AnyCurrencyUnits` — build on this foundation
 
-**Gap 3** (no template dependency):
-- Add entries ㉓-㉔ (book-value transfer) and ㉗-㉘ (G/L clearing) to the
-  FIAT_FX_CONVERSION_VIA_TRADING template
-- Template receives `book_value` as a parameter
-- G/L = conversion_proceeds − book_value
-- Test with placeholder book values
+**Gap 3** — **PARTIALLY ADDRESSED** via #4958 + #4970:
+- Conversion book-value leg (entries ㉓-㉔, ㉗-㉘) in #4958
+- Settlement book-value leg (FX_SETTLEMENT 2→4 entries) in #4970
+- `OutflowResult` struct threads `proportional_book_value` from position → ledger
+- Test with placeholder book values — runtime correctness blocked on Gap 2
 
-**Gap 5** (no template dependency):
-- Add `reference_rate` JSON metadata params to FX_CONVERSION, FX_SETTLEMENT,
-  and REALIZED_FX_GAIN_LOSS templates
-- Follow pattern from #4559 on RECORD_DEPOSIT
+**Gap 5** — **ADDRESSED** in #4970 (pending merge):
+- `AnyReferenceRate` added to all 3 FX template params, serialized as `"reference_rate"` in `meta` JSON
+- Follows pattern from #4559 on RECORD_DEPOSIT
+- Adds `core-price` dependency to `core-fx`
 
 ### Application service layer — wiring real values
 
 **Gap 1** (cross-currency rate lookup):
 - ~~Generalize rate types to accept generic currency pairs~~ — **done** via #4817 (`ExchangeRate<Base, Quote>`, `AnyReferenceRate`)
-- Separate historical from spot lookup — #4869 explored this but was closed without merge; needs new approach
+- ~~Separate historical from spot lookup~~ — **in progress** via #4960 (spot vs historical use-cases in `core/price`)
+- Naming alignment needed — vindard proposed IAS 21 "translation" terminology on #4960 review
+- Historical rate storage — #4923 (Prabhat1308) exploring `exchange_rates` table + outbox delivery
 - Add a fiat rate source adapter for EUR/USD, GBP/USD, etc. (separate from the BTC price providers)
 - Enables: application service passes real rate values to Gap 2/Gap 3 templates
 
