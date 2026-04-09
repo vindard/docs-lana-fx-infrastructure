@@ -26,17 +26,15 @@ Three distinct roles a currency can play in a multi-currency system. Every amoun
 
 **Example:** If functional currency is USD, then a 60 EUR deposit is translated to 66 USD at spot. The 66 USD is the functional-currency book value. Revaluation adjustments are computed against this functional-currency balance.
 
-**Why it matters:** The functional currency is the anchor for the entire dual-currency entry design (Group A in the SPEC). Every foreign-currency entry carries a parallel functional-currency entry. The delta revaluation method computes adjustments as `(foreign_balance × closing_rate) - functional_currency_balance`. Getting the functional currency wrong means every revaluation, every book value, and every gain/loss calculation is wrong.
-
-**In the codebase:** Currently hard-coded as USD (see `TODO: Hard-coded base/functional Currency` in the deposit use case). The generic parameter `FunctionalCurrency: StaticCurrency` on the ledger method is the right shape for making this configurable.
+**Why it matters:** The functional currency is the anchor for the entire dual-currency entry design. Every foreign-currency entry carries a parallel functional-currency entry. The delta revaluation method computes adjustments as `(foreign_balance × closing_rate) - functional_currency_balance`. Getting the functional currency wrong means every revaluation, every book value, and every gain/loss calculation is wrong.
 
 ### Distinct from
 
-- **Transaction currency** — Functional currency is an entity-level constant; transaction currency varies per operation. When they're the same (e.g. a USD deposit in a USD-functional entity), no translation is needed and the single-currency `RecordDeposit` template is used.
+- **Transaction currency** — Functional currency is an entity-level constant; transaction currency varies per operation. When they're the same (e.g. a USD deposit in a USD-functional entity), no translation is needed.
 
 - **Presentation currency** — Functional currency is for internal accounting; presentation currency is for external reporting. They're often the same but don't have to be.
 
-- **Base currency** — In exchange rate notation, "base" is a pair-relative concept (the denominator in `ExchangeRate<Base, Quote>`). Functional currency happens to be the base in most of our [currency translations](currency-translation.md#term-currency-translation), but "base" has no institutional meaning — it's just which side of the rate you're on.
+- **Base currency** — In exchange rate notation, "base" is a pair-relative concept (the denominator in a rate pair). Functional currency happens to be the base in most [currency translations](currency-translation.md#term-currency-translation), but "base" has no institutional meaning — it's just which side of the rate you're on.
 
 ---
 
@@ -46,7 +44,7 @@ Three distinct roles a currency can play in a multi-currency system. Every amoun
 
 **Example:** A Lana instance operating in Europe might have EUR as its functional currency but present consolidated statements in USD for a US-based parent company. All EUR functional-currency balances would be translated to USD at the reporting date for presentation.
 
-**Why it matters for Lana:** Currently a deferred concern — the SPEC focuses on functional-currency accounting first. Presentation currency translation is an additional layer that sits on top of functional-currency financial statements rather than being embedded in day-to-day transaction recording. Included here to complete the IAS 21 framework and prevent confusion with functional currency.
+**Why it matters:** Presentation currency translation is an additional layer that sits on top of functional-currency financial statements rather than being embedded in day-to-day transaction recording. Included here to complete the IAS 21 framework and prevent confusion with functional currency.
 
 ### Distinct from
 
@@ -58,11 +56,11 @@ Three distinct roles a currency can play in a multi-currency system. Every amoun
 
 ## Summary
 
-| Role | Varies per | Determines | Current state |
-|------|-----------|------------|---------------|
-| Transaction | transaction | which omnibus, which account sets, native leg of dual-currency entries | Generic `TransactionCurrency: StaticCurrency` param |
-| Functional | entity/instance | book values, revaluation baselines, functional leg of dual-currency entries | Hard-coded `Usd` |
-| Presentation | reporting context | how financial statements are denominated for external consumers | Not implemented (deferred) |
+| Role | Varies per | Determines |
+|------|-----------|------------|
+| Transaction | transaction | which omnibus, which account sets, native leg of dual-currency entries |
+| Functional | entity/instance | book values, revaluation baselines, functional leg of dual-currency entries |
+| Presentation | reporting context | how financial statements are denominated for external consumers |
 
 ---
 
@@ -77,20 +75,4 @@ The following terms appear frequently in banking and accounting literature but m
 | **Jurisdiction currency** | Same as local currency, with regulatory emphasis | Adds no precision over "local currency." Could refer to functional or presentation depending on whether the regulator requires operational or reporting compliance. |
 | **Home currency** | Functional currency | Pure synonym, but informal and not used in any standard. |
 | **Reporting currency** | Sometimes functional, sometimes presentation | The most dangerous one. Treasury desks often mean functional; consolidation teams often mean presentation. IAS 21 introduced the three-term framework specifically because "reporting currency" was causing confusion. |
-| **Settlement currency** | Currency actually delivered when a transaction completes | Usually equals transaction currency, but can differ in FX workflows (e.g. CLS settlement). Not relevant for Lana currently. |
-
-## Terms that blur the line
-
-| Term | Current usage | Concern |
-|------|--------------|---------|
-| **`any_currency`** (naming prefix) | Used on the dual-currency deposit template/use-case: `AnyCurrencyRecordDeposit`, `record_any_currency_deposit`. | Misleading as a domain label — suggests it handles all currencies uniformly, when the distinguishing feature is the functional-currency [currency translation](currency-translation.md#term-currency-translation) leg. "Any" doesn't tell you *why* this template exists or how it differs from `RecordDeposit`. A name rooted in the domain (e.g. `ForeignCurrencyRecordDeposit`, `TranslatedRecordDeposit`) would be clearer. Acceptable as a working name during exploration but worth revisiting. |
-
-## Auxiliary currency terms
-
-Currency-related terms in the codebase that don't describe a domain currency role. These came out of the same exploration around IAS 21 and functional/transaction currency naming, but serve type-system, architectural, or rate-notation purposes rather than identifying which role a currency plays. They're fine in their own context.
-
-| Term | Purpose | Status |
-|------|---------|--------|
-| **`AnyCurrency`** (type) | Rust type-erasure for serialization boundaries where generic currency params are impractical (e.g. `AnyReferenceRate`, `AnyMinorUnits`). | Fine — this is plumbing, not domain language. |
-| **Base / Quote** (in `ExchangeRate<Base, Quote>`) | Position within an exchange rate pair. "Base" is the denominator, "Quote" is the numerator. | Fine — pair-relative notation, not an institutional role. USD is "base" in one pair and "quote" in another. |
-| **Multicurrency** | Describes system capability — "this system handles more than one currency." | Fine as an architectural label. Not a property of any specific currency or amount. |
+| **Settlement currency** | Currency actually delivered when a transaction completes | Usually equals transaction currency, but can differ in FX workflows (e.g. CLS settlement). |
