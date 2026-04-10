@@ -4,12 +4,17 @@
 
 - [Problem Statement](#problem-statement)
 - [Current State](#current-state)
-  - [Price Module (`core/price/`)](#price-module-coreprice)
-  - [What's Missing](#whats-missing)
+  - [Foundational Primitives (on main)](#foundational-primitives-on-main)
+  - [Original Starting Point](#original-starting-point)
+  - [What Remains](#what-remains)
   - [Why Both Rate History and Per-Transaction Rates?](#why-both-rate-history-and-per-transaction-rates)
 - [Accounting Framework](#accounting-framework)
   - [Fiat FX: IAS 21 / ASC 830](#fiat-fx-ias-21--asc-830)
   - [BTC: FASB ASU 2023-08 (Fair Value Through Net Income)](#btc-fasb-asu-2023-08-fair-value-through-net-income)
+- [Key Design Decisions](#key-design-decisions)
+  - [Decision 1: Accumulator (WAC) over lots for fiat FX position tracking](#decision-1-accumulator-wac-over-lots-for-fiat-fx-position-tracking)
+  - [Decision 2: Cumulative revaluation tracker on all revalued accounts](#decision-2-cumulative-revaluation-tracker-on-all-revalued-accounts)
+  - [Decision 3: Dual-currency entries via multiple templates (CALA approach 3.1)](#decision-3-dual-currency-entries-via-multiple-templates-cala-approach-31)
 - [Component 1: Exchange Rate Storage](#component-1-exchange-rate-storage)
   - [Schema](#schema)
   - [Rate Types](#rate-types)
@@ -30,7 +35,7 @@
   - [BTC Does Not Flow Through the Trading Account](#btc-does-not-flow-through-the-trading-account)
   - [Chart of Accounts Additions](#chart-of-accounts-additions)
   - [How Fiat Conversions Flow Through the Trading Account](#how-fiat-conversions-flow-through-the-trading-account)
-  - [CALA Template: Fiat FX Conversion via Trading Account](#cala-template-fiat-fx-conversion-via-trading-account)
+  - [CALA Templates: Fiat FX Conversion, Realized G/L, and Settlement](#cala-templates-fiat-fx-conversion-realized-gl-and-settlement)
   - [BTC Conversions: Direct Fair Value Booking](#btc-conversions-direct-fair-value-booking)
   - [Scoping Note](#scoping-note)
   - [Rate Locking and Spread Considerations](#rate-locking-and-spread-considerations)
@@ -39,6 +44,7 @@
     - [The Revaluation Process](#the-revaluation-process)
     - [Revaluation Methods](#revaluation-methods)
     - [Reconciliation Job](#reconciliation-job)
+    - [Open Questions](#open-questions)
   - [BTC Fair Value Revaluation (ASU 2023-08)](#btc-fair-value-revaluation-asu-2023-08)
   - [Implementation](#implementation)
     - [Fiat FX Revaluation Jobs](#fiat-fx-revaluation-jobs)
@@ -92,51 +98,51 @@ A multicurrency lending platform that holds BTC collateral and transacts in mult
 
 ## Current State
 
-### Price Module (`core/price/`)
+The system has evolved from its original single-primitive starting point. The architectural primitives described below are the building blocks the remaining components reference. For PR-level progress tracking, see `IMPLEMENTATION_STATUS.md`.
 
-```rust
-// The only conversion primitive in the system
-struct PriceOfOneBTC(UsdCents);
+### Foundational Primitives (on main)
 
-impl PriceOfOneBTC {
-    // USD → BTC: rounds UP (less favorable)
-    fn cents_to_sats_round_up(&self, cents: UsdCents) -> Satoshis {
-        let btc = cents.to_usd() / self.to_usd();
-        Satoshis::try_from_btc(btc.round_dp(8, RoundingStrategy::AwayFromZero))
-    }
+**Currency representation (`lib/money`, `core/price`):**
+- `CurrencyCode`, `CurrencySet`, `CurrencyMap`, `RestrictedCurrencyMap` — runtime currency identity
+- `AnyCurrency` — dynamic currency type bridging compile-time `Usd`/`Btc` types with runtime `CurrencyCode`
+- `CalculationAmount<C>` — high-precision type for financial calculations
+- `QuantizationPolicy` — currency-specific rounding/precision rules
 
-    // BTC → USD: rounds DOWN (less favorable)
-    fn sats_to_cents_round_down(&self, sats: Satoshis) -> UsdCents {
-        let usd = sats.to_btc() * self.to_usd();
-        UsdCents::try_from_usd(usd.round_dp(2, RoundingStrategy::ToZero))
-    }
-}
-```
+**Exchange rates (`core/price`):**
+- `ExchangeRate<Base, Quote>` — generic typed exchange rate using `CalculationAmount`
+- `ReferenceRate`, `AnyReferenceRate` — currency-generic rate metadata for ledger transactions
+- `Rate` enum — base vs quote expression of a rate
+- `PriceClient` trait — per-provider fetch jobs with aggregation handler
+- Rate metadata (`reference_rate`) stored on deposit ledger transactions
 
-**Limitations:**
-- Only BTC↔USD pair
-- No rate history — uses current spot rate only
-- No record of which rate was used for a given transaction
-- Rate source: Bitfinex (single provider, no fallback)
-- Rounding direction is hardcoded (conservative), not configurable per use case
+**Deposit infrastructure:**
+- Currency-aware `DepositAccount` entity with `AnyCurrencyUnits`
+- Currency-aware ledger templates for deposits and withdrawals
+- `DepositAccountSetCatalog` with currency-aware account set resolution
 
-### What's Missing
+**FX crate (`core/fx`):**
+- Crate scaffolded with primitives, ledger module, chart of accounts integration (3200, 4200, 5100), RBAC, `CoreFx` public API
+
+### Original Starting Point
+
+The original system had only `PriceOfOneBTC(UsdCents)` — a single struct fetching a live BTC/USD spot rate from Bitfinex and discarding it. No rate history, no per-transaction recording, no multi-pair support. This starting point motivates the full component design below.
+
+### What Remains
 
 | Component | Status |
 |-----------|--------|
-| Exchange rate storage (historical) | Not implemented |
-| Rate stored per transaction | Not implemented |
-| Trading accounts (Selinger model) | Not implemented |
-| Unrealized FX gain/loss accounts | Not implemented |
-| Realized FX gain/loss accounts | Not implemented |
-| Period-end revaluation batch | Not implemented |
-| Auto-reversal of revaluation entries | Not implemented |
-| Multi-pair rate service | Not implemented |
-| Multi-source rate aggregation | Not implemented |
-| Rate staleness / circuit breakers | Not implemented |
-| Collateral mark-to-market (accounting entries) | Not implemented (LTV calc exists but doesn't post entries) |
-| Cost basis / lot tracking for BTC | Not implemented |
-| Segregation controls for custodied BTC | Not implemented |
+| Exchange rate storage (historical) | Not yet built — C1 schema and service |
+| Multi-source rate aggregation | Not yet built — C2 adapters and aggregator |
+| Fiat rate source adapters (EUR/USD, GBP/USD) | Not yet built — only BTC price providers exist |
+| Dual-currency entries on all templates | Partially built — deposit template has dual-currency variant; withdrawal and conversion templates in review |
+| Trading account conversion flow | In review — FxPosition accumulator, conversion/settlement/G\&L templates |
+| Unrealized FX gain/loss accounts (6100/6200) | Not yet built — Phase 4 |
+| Period-end fiat FX revaluation | Not yet built — Phase 4 |
+| Cumulative revaluation tracker | Not yet built — Phase 4 |
+| BTC fair value revaluation (7100/7200) | Not yet built — Phase 5 |
+| Collateral revaluation (accounting entries) | In progress — lot tracking active; revaluation template/jobs not yet built |
+| Rate staleness / circuit breakers | Not yet built — deferred |
+| Segregation controls for custodied BTC | Not yet built — deferred |
 
 ### Why Both Rate History and Per-Transaction Rates?
 
@@ -205,6 +211,32 @@ Key implications for Lana's FX infrastructure:
 | Closest analogy | — | Trading securities under ASC 320 |
 
 **The agent/custody exception:** When the platform holds BTC as agent (collateral on behalf of borrowers), both the asset (collateral held) and liability (obligation to return) move together with fair value changes. There is no P&L impact because the platform does not own the BTC. ASU 2023-08's P&L recognition applies only to BTC the platform **owns** (e.g., BTC received as fee income, BTC held in treasury).
+
+## Key Design Decisions
+
+Three architectural decisions emerged from implementation that constrain all downstream work. Each is summarized here with its rationale; the full analysis lives in the linked reference document.
+
+### Decision 1: Accumulator (WAC) over lots for fiat FX position tracking
+
+The Trading Account requires book value tracking outside the ledger because realized G/L clearing zeroes the functional-currency balance on each conversion (see Component 4). Two approaches were evaluated: a Selinger-style accumulator (two running scalars — total foreign amount and total functional cost) versus per-inflow lot records with a cost-flow policy (FIFO/LIFO/specific identification).
+
+**Choice: Accumulator with weighted-average cost (WAC).** The Trading Account is a flow-through intermediary, not a long-held portfolio. Positions enter via conversion and exit via settlement, typically within days. WAC is an acceptable policy under IAS 21 for monetary items. The accumulator provides O(1) operations, deterministic event-sourced replay, and no lot-splitting or policy-configuration complexity. If FIFO or specific identification is needed in the future (e.g., for tax-sensitive disposals), the lot model can be layered on — the CALA templates and `FxConversion` interface contract are agnostic to the position-tracking strategy.
+
+**Full analysis:** `references/accumulator-vs-lots-book-value-tracking.md`
+
+### Decision 2: Cumulative revaluation tracker on all revalued accounts
+
+The delta method posts revaluation adjustments directly to the ledger's functional-currency balance, blending them with the original book value. Once blended, the revaluation portion is inseparable from the ledger balance alone. Withdrawal and settlement operations must unwind revaluation proportionally — they need to know how much of the USD balance is book cost vs accumulated revaluation.
+
+**Choice: Per-account `cumulative_reval` scalar** maintained by three operations: revaluation (increment), withdrawal (proportional decrement), settlement (proportional decrement). This is analogous to the Trading Account's position accumulator — both are out-of-band values that the dual-currency ledger design requires but cannot derive from balances at a point in time. See Component 5 for the full mechanics.
+
+### Decision 3: Dual-currency entries via multiple templates (CALA approach 3.1)
+
+CALA entries carry a single `(currency, units)` pair — no built-in parallel currency column like SAP's ACDOCA. Five application-level approaches were evaluated for tracking functional-currency book value alongside foreign-currency entries.
+
+**Choice: Multiple templates with conditional routing.** A USD deposit uses the standard 2-entry template; a EUR deposit uses a 4-entry variant (2 EUR entries + 2 USD book-value entries). The application inspects currency at posting time and routes accordingly. This puts book value inside the balance pipeline where revaluation can read it directly as the account's functional-currency balance. The tradeoffs — balance conflation (USD entries from different sources share the same balance bucket), template proliferation, and same-currency degeneracy — are accepted as preferable to moving book value outside the ledger (where it would require separate aggregation and split the source of truth).
+
+**Full analysis:** `references/cala-parallel-currency-representations.md`
 
 ## Component 1: Exchange Rate Storage
 
@@ -548,44 +580,114 @@ EUR equivalent = 45,454.55 × 1.05 = $47,727.27. Trading account net = 50,000 - 
 **If EUR weakens to 1.15 USD/EUR:**
 EUR equivalent = 45,454.55 × 1.15 = $52,272.73. Trading account net = 50,000 - 52,272.73 = **-$2,272.73** = unrealized gain.
 
-### CALA Template: Fiat FX Conversion via Trading Account
+### CALA Templates: Fiat FX Conversion, Realized G/L, and Settlement
+
+A fiat FX conversion requires three templates working together. The conversion template acquires foreign currency into Trading and transfers book value from the source account. The realized G/L template clears the spread between book cost and sale proceeds. The settlement template delivers foreign currency from the omnibus to a counterparty.
+
+#### Template 1: Fiat FX Conversion via Trading Account
+
+**Example: Convert 50 EUR at rate 1.15 (book value of 50 EUR at blended rate 1.14 = 57 USD)**
+
+```
+Leg 1 — Foreign currency transfer (source → Trading):
+  ① Dr  Trading              50 EUR
+  ② Cr  EUR Deposit          50 EUR
+
+Leg 2 — Book value transfer (source → Trading, functional currency):
+  ③ Dr  Trading              57 USD       ← proportional book cost
+  ④ Cr  EUR Deposit          57 USD
+
+Leg 3 — Sale proceeds (Trading → USD Cash):
+  ⑤ Dr  USD Cash             57.50 USD    ← 50 EUR × 1.15
+  ⑥ Cr  Trading              57.50 USD
+```
+
+The book value (`57 USD`) is computed by the application service as `(converted_eur / total_eur_in_source) × source_usd_balance` and passed to the template as a parameter. The template does not read balances or call services.
+
+After these entries, Trading's USD balance is `57 - 57.50 = -0.50`. The difference is the realized gain, cleared by the next template.
 
 ```rust
 // Template: fiat_fx_conversion_via_trading
 // Used ONLY for fiat-to-fiat conversions (e.g., USD/EUR, USD/GBP)
+// 6 entries: foreign-currency legs + book-value legs + sale proceeds
 entries: [
-    // Leg 1: Source currency out
-    Entry {
-        account: "params.trading_account_id",
-        units: "params.source_amount",
-        currency: "params.source_currency",
-        direction: DEBIT,
-        layer: SETTLED,
-    },
-    Entry {
-        account: "params.source_account_id",
-        units: "params.source_amount",
-        currency: "params.source_currency",
-        direction: CREDIT,
-        layer: SETTLED,
-    },
-    // Leg 2: Target currency in
-    Entry {
-        account: "params.target_account_id",
-        units: "params.target_amount",
-        currency: "params.target_currency",
-        direction: DEBIT,
-        layer: SETTLED,
-    },
-    Entry {
-        account: "params.trading_account_id",
-        units: "params.target_amount",
-        currency: "params.target_currency",
-        direction: CREDIT,
-        layer: SETTLED,
-    },
+    // Leg 1: Foreign currency from source to Trading
+    Entry { account: "params.trading_account_id", units: "params.source_amount",
+            currency: "params.source_currency", direction: DEBIT, layer: SETTLED },
+    Entry { account: "params.source_account_id", units: "params.source_amount",
+            currency: "params.source_currency", direction: CREDIT, layer: SETTLED },
+    // Leg 2: Book value from source to Trading (functional currency)
+    Entry { account: "params.trading_account_id", units: "params.book_value",
+            currency: "params.functional_currency", direction: DEBIT, layer: SETTLED },
+    Entry { account: "params.source_account_id", units: "params.book_value",
+            currency: "params.functional_currency", direction: CREDIT, layer: SETTLED },
+    // Leg 3: Sale proceeds from Trading to target
+    Entry { account: "params.target_account_id", units: "params.target_amount",
+            currency: "params.target_currency", direction: DEBIT, layer: SETTLED },
+    Entry { account: "params.trading_account_id", units: "params.target_amount",
+            currency: "params.target_currency", direction: CREDIT, layer: SETTLED },
 ]
 ```
+
+**Side effect on Trading USD balance:** G/L clearing (next template) zeroes the remaining USD balance. This is what makes the accumulator necessary — after clearing, the ledger has no record of the 57 USD book cost. See Key Design Decision 1.
+
+#### Template 2: Realized FX Gain/Loss Clearing
+
+```
+  ⑦ Dr  Trading              0.50 USD    ← realized G/L = proceeds - book_value
+  ⑧ Cr  Realized FX Gain     0.50 USD    (or Dr Realized FX Loss if negative)
+```
+
+The realized G/L amount is computed by the position accumulator's `record_outflow` (for settlement) or by the application service (for conversion). The accumulator produces this as a single weighted-average number — see Key Design Decision 1.
+
+```rust
+// Template: realized_fx_gain_loss
+entries: [
+    Entry { account: "params.trading_account_id", units: "params.amount",
+            currency: "params.functional_currency", direction: DEBIT, layer: SETTLED },
+    Entry { account: "params.gain_loss_account_id", units: "params.amount",
+            currency: "params.functional_currency", direction: CREDIT, layer: SETTLED },
+]
+```
+
+#### Template 3: FX Settlement
+
+Settlement delivers foreign currency from the omnibus to a counterparty. This is a separate event from conversion — the bank may convert EUR and hold the position in Trading before physical delivery.
+
+```
+Settlement of 20 EUR (of 50 converted):
+  ⑨ Dr  EUR Omnibus          20 EUR
+  ⑩ Cr  Trading              20 EUR
+  ⑪ Dr  Counterparty         book_value USD    ← proportional book cost from accumulator
+  ⑫ Cr  Trading              book_value USD
+```
+
+The settlement template was expanded from 2 entries (EUR-only delivery) to 4 entries to include the functional-currency book value transfer. The `book_value` is computed as `(settlement_amount / accumulated_foreign) × accumulated_functional` from the position accumulator.
+
+```rust
+// Template: fx_settlement
+entries: [
+    // Foreign currency delivery
+    Entry { account: "params.omnibus_account_id", units: "params.settlement_amount",
+            currency: "params.foreign_currency", direction: DEBIT, layer: SETTLED },
+    Entry { account: "params.trading_account_id", units: "params.settlement_amount",
+            currency: "params.foreign_currency", direction: CREDIT, layer: SETTLED },
+    // Book value transfer (functional currency)
+    Entry { account: "params.counterparty_account_id", units: "params.settlement_book_value",
+            currency: "params.functional_currency", direction: DEBIT, layer: SETTLED },
+    Entry { account: "params.trading_account_id", units: "params.settlement_book_value",
+            currency: "params.functional_currency", direction: CREDIT, layer: SETTLED },
+]
+```
+
+#### Two-Phase G/L Model
+
+Realized G/L is recognized at **conversion time**, not settlement time:
+
+1. **At conversion** — G/L = sale proceeds - book value. The accumulator records the book cost of the acquired foreign currency. EUR stays in Trading.
+2. **At settlement** — EUR delivered to counterparty. Accumulator reduced proportionally. No additional G/L — it was already recognized at conversion.
+
+See the walkthrough (`references/eur-deposit-conversion-revaluation-walkthrough.md`, step 6) for the full worked example with trial balances.
 
 ### BTC Conversions: Direct Fair Value Booking
 
@@ -802,7 +904,15 @@ Phase 4 — Reduce position accumulator:
   trading.accumulator -= acc_portion
 ```
 
-**Note:** Settlement does not transfer USD book value out of Omnibus (unlike withdrawal, which includes a USD transfer leg). This causes Omnibus to retain orphaned USD from settled EUR, producing a spurious large unrealized balance on the next revaluation when the delta method adjusts the inflated USD down to fair value. This is a model artifact that self-corrects on final settlement but produces misleading intermediate balances. See the walkthrough step 14 for a worked example. A complete model would need either a USD book value transfer leg on settlement or separation of orphaned residual from EUR-backed book value before revaluation.
+#### Open Questions
+
+**OQ-1: Orphaned USD on Omnibus after partial settlement.** Settlement delivers EUR from Omnibus to Trading but does not transfer the corresponding USD book value out of Omnibus. This causes Omnibus to retain orphaned USD from EUR that have already been delivered, producing a spurious large unrealized balance on the next revaluation when the delta method adjusts the inflated USD down to fair value. See the walkthrough step 13–14 for a worked example (Omnibus shows 54.85 USD backing only 30 EUR, when fair value at rate 1.05 is just 31.50).
+
+**Current behavior:** The artifact self-corrects on final settlement — when all EUR have been delivered and the position is fully closed, the running revaluation returns to zero. Intermediate balances are misleading but the final state is correct.
+
+**When to revisit:** If intermediate revaluation balances feed into external reporting, regulatory filings, or automated decisions (e.g., margin calculations) before final settlement. In that case, either (a) add a USD book-value transfer leg on settlement (mirroring the withdrawal template's structure), or (b) have the revaluation job separate orphaned residual from EUR-backed book value before computing the delta.
+
+**OQ-2: Platform-owned BTC lot tracking for disposals.** The SPEC uses lot-based tracking for BTC collateral (Component 6, `CollateralLot`), but does not address lot tracking for platform-owned BTC (treasury, fee income). Disposing of platform-owned BTC is a taxable event requiring cost basis. If the platform acquires BTC across multiple transactions at different prices, lot-based tracking with specific identification or FIFO may be needed. This should be resolved as part of the ASU 2023-08 compliance review before Phase 5 implementation.
 
 ### BTC Fair Value Revaluation (ASU 2023-08)
 
@@ -1461,6 +1571,13 @@ The ordering follows demand-driven, emergent design principles: build what deliv
 - **Phase 4 depends on Group A**: the delta method revaluation reads `current_book_value` as the functional-currency balance on the account — these balances are established by Group A's dual-currency entries. Without Group A, revaluation has no baseline.
 - Can be picked up by any workstream or bundled into Group B.
 
+**Approach:** For each template that touches foreign-currency accounts (deposit, withdrawal, conversion), create a dual-currency variant following Key Design Decision 3. The variant adds functional-currency entry legs computed from `amount × spot_rate`. Rate metadata (`AnyReferenceRate`) is serialized into the CALA transaction `meta` JSON field, following the pattern established on `RECORD_DEPOSIT`. The application service looks up the spot rate via the existing `core/price` infrastructure and passes it as a parameter — templates never call rate services.
+
+**Inputs:** Spot rate from `core/price`, foreign-currency amount from the use-case.
+**Outputs:** Dual-currency ledger entries (foreign + functional) with rate metadata. Functional-currency balances on all foreign-currency accounts.
+**Testing:** Each template variant can be tested with hardcoded rate values. Verify: (a) functional-currency entries balance, (b) rate metadata is persisted on the transaction, (c) same-currency case (e.g., USD deposit in USD-functional entity) produces identical entries on both currency legs.
+**Templates requiring dual-currency variants:** `RECORD_DEPOSIT`, `RECORD_WITHDRAWAL`, `FIAT_FX_CONVERSION_VIA_TRADING`, `FX_SETTLEMENT`, `REALIZED_FX_GAIN_LOSS`.
+
 ### Group B: Fiat FX Accounting (parallel)
 
 Independent of Group C. **Phase 4 depends on Phase 3 and Group A**: Phase 3 establishes the core FX crate infrastructure (primitives, ledger module, chart of accounts entries, app-layer wiring) and Group A establishes the functional-currency book values in the ledger that Phase 4's revaluation computes deltas against. Phase 3 and Group A must be completed before Phase 4.
@@ -1468,9 +1585,17 @@ Independent of Group C. **Phase 4 depends on Phase 3 and Group A**: Phase 3 esta
 #### Phase 3: Fiat FX Trading Account + Realized Gain/Loss
 
 - **C4 — Trading Account + Realized FX Accounts**: Add trading account (3200), realized FX gain (4200), realized FX loss (5100), parameterized by `functional_currency`.
-- **C4 — Fiat FX Conversion Template**: Create `fiat_fx_conversion_via_trading` template, route all fiat FX conversions through the trading account, post realized gain/loss on position closure.
-- No jobs required — fires inline on each fiat conversion.
+- **C4 — Fiat FX Conversion Template**: Create `fiat_fx_conversion_via_trading` template (6 entries — see Component 4), `realized_fx_gain_loss` clearing template (2 entries), and `fx_settlement` template (4 entries). Route all fiat FX conversions through the trading account. Realized G/L is recognized at conversion time via the two-phase model (see Component 4).
+- **C4 — Position Accumulator**: Event-sourced `FxPosition` entity tracking `(accumulated_foreign, accumulated_functional)` per currency. Updated on conversion inflow and settlement outflow. Provides book value for the revaluation job (Phase 4) and proportional allocation for settlement.
+- No jobs required — fires inline on each fiat conversion and settlement.
 - Immediate value: every fiat FX conversion is properly routed and realized gains/losses are captured at transaction time.
+
+**Approach:** The `CoreFx` module exposes two orchestration methods: `convert_fiat_fx()` and `settle_fx()`. Each reads the relevant rate and book value, constructs an `FxConversion` struct, updates the `FxPosition` entity (which computes realized G/L on outflow), and posts the appropriate CALA template(s). Follow the established pattern of `CoreDeposit` / `CoreCredit` for module structure — domain primitives, event-sourced entity, ledger templates, and a public API struct wired through `LanaApp`.
+
+**Inputs:** Source/target currencies and amounts, exchange rate (from `core/price` or passed by caller), source account's functional-currency balance (for book-value computation).
+**Outputs:** Ledger entries on Trading, source, target, and gain/loss accounts. Updated `FxPosition` events. `FxConversionResult` / `FxSettlementResult` structs returned to caller.
+**Testing:** Integration tests with placeholder rates and balances. Verify: (a) Trading USD balance is zero after conversion + G/L clearing, (b) accumulator tracks correct book cost, (c) settlement reduces accumulator proportionally, (d) realized G/L = proceeds - book_value, (e) `FxConversion` rejects same-currency and BTC pairs.
+**Patterns to follow:** `core/deposit` for module layout; `core/credit/facility` for event-sourced entity with `Idempotent<T>`; the walkthrough step 6 for the canonical conversion entry sequence.
 
 #### Phase 4: Fiat FX Revaluation (Unrealized)
 
@@ -1481,6 +1606,14 @@ Independent of Group C. **Phase 4 depends on Phase 3 and Group A**: Phase 3 esta
 - Revalues any account denominated in a non-functional currency — no dependency on the collateral boundary or the trading account.
 - **Depends on Group A**: functional-currency book values must be in the ledger before revaluation can compute deltas against them.
 - **Note**: A minimal rate storage capability (subset of C1) will emerge here as needed for fiat closing rates — just enough to support the revaluation jobs.
+
+**Approach:** Follows the `EndOfDay event → Handler → Collector → Worker` pattern used by interest accrual and obligation processing. The handler listens for `CoreTimeEvent::EndOfDay`. The collector paginates over fiat foreign-currency accounts (cursor-based, excludes BTC accounts entirely). The worker computes the delta per account and posts a revaluation entry if non-zero. The revaluation job must branch on account type: regular accounts read book value from the functional-currency ledger balance; the Trading Account reads book value from the position accumulator (see Key Design Decision 1). See Component 5 for the full collector/worker code.
+
+**Inputs:** Closing rate per currency pair (from a minimal C1 rate storage or the existing price feed), list of foreign-currency accounts from the repository.
+**Outputs:** Revaluation adjustment entries on 6100/6200. Updated `cumulative_reval` per account. Revaluation report log (account, currency, old value, new value, adjustment, rate used).
+**Testing:** (a) Single account with one deposit, one revaluation — verify adjustment = `(foreign_balance × closing_rate) - current_usd_balance`. (b) Multiple revaluations in sequence — verify each posts only the incremental delta. (c) Trading account revaluation — verify it reads from accumulator, not ledger USD balance. (d) Withdrawal after revaluation — verify proportional reval unwind. (e) Idempotency — running the same revaluation twice in the same period posts zero adjustment on the second run. The walkthrough (`references/eur-deposit-conversion-revaluation-walkthrough.md`) provides expected values for all 9 revaluation steps.
+**Patterns to follow:** `core/credit/interest` for the handler→collector→worker job chain; `core/credit/obligation` for cursor-based pagination in collectors; Component 5 code examples for the specific job implementations.
+**Known open question:** OQ-1 (orphaned USD on Omnibus after partial settlement) — implement the current model and document the artifact; revisit if intermediate balances feed external reporting.
 
 ### Group C: BTC Revaluation (parallel; Phase 5 depends on Phase 2)
 
@@ -1493,12 +1626,27 @@ Independent of Groups A and B. Phases 2 and 5 can start in parallel, but **Phase
 - Simplest revaluation — one template, one job chain, no new CoA accounts. Establishes the collateral-vs-owned BTC boundary that Phase 5 depends on.
 - Immediate value: LTV monitoring accuracy for the existing lending business.
 
+**Approach:** The collateral revaluation template posts matching debit/credit adjustments to both the collateral held account and the collateral obligation account — both sides move together, producing zero net P&L. The collector paginates over active facilities with collateral, not over individual accounts. The worker fetches the BTC closing rate, computes `new_value = btc_balance × btc_rate`, and posts the delta against the current carrying value. This is the simplest revaluation regime — no unrealized/realized distinction, no reversals, no accumulator.
+
+**Inputs:** BTC closing rate (from `PriceOfOneBTC` / existing price feed), list of active facilities with collateral.
+**Outputs:** Both-sides revaluation entries (functional currency only — BTC quantity unchanged). Updated LTV for each facility.
+**Testing:** (a) Single facility, BTC drops — verify both accounts adjust equally with no P&L entries. (b) Facility with no collateral — verify skipped. (c) BTC price unchanged — verify no entry posted. (d) Liquidation after revaluation — verify correct carrying value flows into liquidation entries.
+**Patterns to follow:** `core/credit/facility` for the collector pattern; Component 6's `collateral_revalue` template pseudocode; Component 7's `CollectFacilitiesForCollateralRevaluationJobRunner` code example.
+
 #### Phase 5: BTC Fair Value Revaluation
 
 - **C5 (BTC) — BTC Fair Value Revaluation**: Add BTC Fair Value Gain/Loss accounts (7100/7200). BTC fair value revaluation job chain (separate from fiat FX). The collector excludes collateral accounts (boundary established in Phase 2).
 - **C7 — BTC Fair Value EndOfDay Job Chain**: BTC fair value revaluation handler + collector + worker jobs, added to the EndOfDay trigger alongside existing chains.
 - **Depends on**: Phase 2 — collateral boundary must exist so the collector knows what to exclude. No dependency on Group A, Phase 3, or Phase 4.
 - Needed as soon as the platform owns any BTC (treasury, fee income). Requires ASU 2023-08 compliance review.
+
+**Approach:** Same handler→collector→worker pattern as Phase 4, but with key differences: (a) adjustments are cumulative with no reversals (ASU 2023-08, not IAS 21), (b) posts to 7100/7200 (BTC Fair Value Gain/Loss), never to 6100/6200 (fiat FX unrealized), (c) the collector explicitly excludes collateral accounts, querying only platform-owned BTC. The worker computes `adjustment = (btc_balance × current_btc_rate) - current_carrying_value` and posts to 7100 or 7200 depending on sign.
+
+**Inputs:** BTC fair value rate (from price feed), list of platform-owned BTC accounts (excludes collateral — boundary from Phase 2).
+**Outputs:** Fair value adjustment entries on 7100/7200 (functional currency only — BTC quantity unchanged).
+**Testing:** (a) BTC rises — verify Dr BTC Holdings / Cr 7100. (b) BTC falls — verify Dr 7200 / Cr BTC Holdings. (c) Collateral account excluded from collector. (d) Multiple revaluations are cumulative — no reversals.
+**Patterns to follow:** Phase 4's job chain structure; Component 5's `ProcessBtcFairValueRevaluationJobRunner` code example.
+**Prerequisite:** ASU 2023-08 compliance review should confirm fair value treatment before implementation. See also OQ-2 (platform-owned BTC lot tracking for disposals).
 
 ### Deferred: Exchange Rate Storage + Multi-Source Aggregation
 
