@@ -1,7 +1,7 @@
 # FX Infrastructure: Progress Overview
 
 *Derived from SPEC.md and IMPLEMENTATION_STATUS.md. Not a source of truth — see those documents for details.*
-*Last updated: 2026-04-10*
+*Last updated: 2026-04-10T14:27Z*
 
 ## Naming Map
 
@@ -40,7 +40,7 @@ FIAT FX CHAIN                              BTC CHAIN
 ┌───────────────────────┐                  ┌───────────────────────┐
 │  Dual-Currency        │                  │  Collateral           │
 │  Entries              │                  │  Revaluation          │
-│  ████████████████░░░░ │ ~80%             │  ████░░░░░░░░░░░░░░░░ │ ~20%
+│  █████████████████░░░ │ ~85%             │  ████░░░░░░░░░░░░░░░░ │ ~20%
 └───────────┬───────────┘                  └───────────┬───────────┘
             │                                          │
             │ revaluation needs                        │ fair-value collector
@@ -120,11 +120,11 @@ Infrastructure merged to main that both chains build upon.
 | Rate primitives (`ExchangeRate<B,Q>`, `AnyReferenceRate`, `Rate`) | ✅ Merged | bodymindarts |
 | Per-provider price fetch (`PriceClient` trait) | ✅ Merged | bodymindarts |
 | Rate metadata on `RECORD_DEPOSIT` | ✅ Merged | nsandomeno |
-| Spot vs historical rate separation | 🟢 Approved | nsandomeno |
-| Dual-currency `RECORD_DEPOSIT` (4-entry variant) | 🟢 Approved | nsandomeno |
+| Spot vs historical rate separation | ✅ Merged (#4960) | nsandomeno |
+| Dual-currency `RECORD_DEPOSIT` (4-entry variant) | ✅ Merged (#4960) | nsandomeno |
 | Dual-currency `RECORD_WITHDRAWAL` | ⬜ Not started | — |
 
-**Next action:** Merge #4960 (approved, awaiting un-draft). Then build withdrawal dual-currency variant.
+**Next action:** Build withdrawal dual-currency variant.
 
 ---
 
@@ -144,9 +144,9 @@ Infrastructure merged to main that both chains build upon.
 | Rate metadata on all 3 FX templates | 🔵 Written, no review | vindard |
 | Integration tests (conversion + settlement) | 🔵 Written, no review | vindard |
 
-**PR chain:** #4957 → #4958 → #4970 (all draft, rebased on main, zero human reviews)
+**PR chain:** #4957 → #4958 → #4970 (all draft, rebased on main). #4957 has initial comment from jirijakes.
 **Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6).
-**Next action:** Get human reviews on #4957 (foundation) — it gates the entire chain.
+**Next action:** Get full review on #4957 (foundation) — it gates the entire chain.
 
 ---
 
@@ -269,18 +269,17 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | #4978 | Bitfinex price poller fix (11th field) | 🟢 Approved, awaiting un-draft | BTC/USD rates broken on staging |
 | #4986 | Hourly time event producer | Open, no review | Could support periodic rate snapshots |
 | #4757 | Eventually consistent account sets | Draft | Multi-currency throughput |
-| #4972 | CoA event publisher | Changes requested | FX account setup notifications |
 
 ---
 
 ## Critical Path (Fiat FX)
 
 ```
- Merge #4960 ──► Review #4957 chain ──► Merge chain ──► Revaluation ──► Done
- (approved)      (zero reviews yet)      (~2200 lines)   (all new work)
+ #4960 ✅ ──► Review #4957 chain ──► Merge chain ──► Revaluation ──► Done
+ (merged)     (jirijakes started)    (~2200 lines)   (all new work)
 ```
 
-The bottleneck is human review of vindard's #4957→#4958→#4970 chain.
+The bottleneck is full human review of vindard's #4957→#4958→#4970 chain.
 
 ---
 
@@ -289,10 +288,9 @@ The bottleneck is human review of vindard's #4957→#4958→#4970 chain.
 *Updated 2026-04-10.*
 
 ### vindard
-1. **Un-draft and merge #4960** (nsandomeno's dual-currency deposit) — approved by vindard + jirijakes, just needs un-drafting. Clears Gap 2 for deposits.
-2. **Un-draft and merge #4978** (Bitfinex price poller fix) — approved, BTC/USD rates broken on staging until this lands.
-3. **Request reviewers on #4957** — zero human reviews, bottleneck for entire Fiat FX chain (#4957→#4958→#4970, ~2200 lines).
-4. **Rate Type Migration (Gap 4) — deferred until #4957 chain lands.**
+1. **Un-draft and merge #4978** (Bitfinex price poller fix) — approved, BTC/USD rates broken on staging until this lands.
+2. **Drive review of #4957 chain** — jirijakes has started reviewing; get to full approval. Bottleneck for entire Fiat FX chain (~2200 lines across #4957→#4958→#4970).
+3. **Rate Type Migration (Gap 4) — deferred until #4957 chain lands.**
    Proposed as independent work while awaiting reviews, but premature because:
    - Rename target (`ExchangeRate` → `ConversionRate` in `core/fx`) only exists in #4957, not on main.
    - `ReferenceRate<B,Q>` wraps `ExchangeRate<B,Q>` from `core/price`. Moving it to `core/fx` without also moving `ExchangeRate<B,Q>` forces `core/fx` → `core/price` — the backwards dependency Gap 4 wants to eliminate. Needs alignment with bodymindarts on where shared rate primitives belong.

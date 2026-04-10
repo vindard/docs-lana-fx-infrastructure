@@ -1,7 +1,7 @@
 # FX Infrastructure: Implementation Status & Gaps
 
 *Living document — updated as gaps are resolved and new ones identified.*
-*Originally consolidated 2026-03-30. Last updated 2026-04-10T03:42Z.*
+*Originally consolidated 2026-03-30. Last updated 2026-04-10T14:27Z.*
 *Supersedes `group-b-waiting-on-group-a.md` in this directory and the date-stamped gap/dependency docs in `ephemeral/2026-03-24/`, `2026-03-25/`, `2026-03-29/`.*
 
 ### Architectural principles for this document
@@ -50,6 +50,7 @@ These PRs have merged and form the foundation for the remaining work:
 | #4961 | nicolasburtey | 2026-04-08 | Add rollup-stress-lite simulation preset (CLI) |
 | #4962 | nicolasburtey | 2026-04-08 | Increase OTEL batch span processor queue to prevent span drops |
 | #4430 | vindard | 2026-04-09 | **core/fx crate scaffolding:** Creates `core/fx` with primitives, FX ledger module, fiat conversion template, chart of accounts integration, CoreFx public API wiring, RBAC. Base for #4957. |
+| #4960 | nsandomeno | 2026-04-10 | **Dual-currency deposit template:** `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs, separate `record_any_currency_deposit` use-case, spot vs historical rate separation in `core/price`. Addresses Gap 2 for deposits. |
 
 ---
 
@@ -57,16 +58,15 @@ These PRs have merged and form the foundation for the remaining work:
 
 | PR / Branch | Author | Status | Relevance |
 |-------------|--------|--------|-----------|
-| #4957 `refactor/fx-position-foundation` | vindard | Draft, rebased on main (2026-04-10) | **Phase 3 foundation:** Domain primitives (`ExchangeRate`, `FxConversion`, `FunctionalRate`, `RealizedGainLoss`), event-sourced `FxPosition` entity with Selinger accumulator. Rebased onto main after #4430 merged. Replaces #4552. No human review yet. |
+| #4957 `refactor/fx-position-foundation` | vindard | Draft, rebased on main (2026-04-10) | **Phase 3 foundation:** Domain primitives (`ExchangeRate`, `FxConversion`, `FunctionalRate`, `RealizedGainLoss`), event-sourced `FxPosition` entity with Selinger accumulator. Rebased onto main after #4430 merged. Replaces #4552. jirijakes started reviewing. |
 | #4958 `refactor/fx-conversion-flow` | vindard | Draft, rebased on main (2026-04-10) | **Phase 3 orchestration:** CALA templates (`FiatFxConversionViaTrading`, `RealizedFxGainLoss`, `FxSettlement`), `CoreFx::convert_fiat_fx()` and `CoreFx::settle_fx()` orchestration. Bases on #4957. No human review yet. |
 | #4970 `refactor/fx-settlement-book-value` | vindard | Draft, rebased (2026-04-10) | **Phase 3 completion:** Settlement book-value leg (FX_SETTLEMENT expanded 2→4 entries), `OutflowResult` struct from position outflow, `AnyReferenceRate` metadata on all 3 FX templates. Adds `core-price` dep to `core-fx`. **Integration tests added** for FX conversion and settlement. Chain: #4957→#4958→**#4970**. Addresses Gap 5 and part of Gap 3. No human review yet. |
-| #4960 `refactor--templates-with-rates` | nsandomeno | Draft, **APPROVED by vindard + jirijakes** (2026-04-09) | **Non-functional currency deposit template:** `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs, separate `record_any_currency_deposit` use-case, spot vs historical rate separation in `core/price`. Addresses Gap 2. New commits: moved param defs to associated function, fixed currency mismatch error fields, moved currency + account-active validation to `DepositAccount` entity. Ready for merge once un-drafted. |
+| #4960 `refactor--templates-with-rates` | nsandomeno | **✅ Merged 2026-04-10** | **Non-functional currency deposit template:** `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs, separate `record_any_currency_deposit` use-case, spot vs historical rate separation in `core/price`. Addresses Gap 2. |
 | #4923 `feat/exchange-rate-history` | Prabhat1308 | Draft | **Rate History exploration.** `AggregatePriceHandler` delivers to `exchange_rates` table and ephemeral outbox. Relevant to Gap 1 (historical rate lookup). Reviewers requested: nsandomeno, vindard. |
 | #4959 `collateral-lot-tracking` | jirijakes | Draft | **Collateral lot tracking.** Active development (3 new commits 2026-04-10: remove unused Lot events, make lot methods fallible, require liquidation ID on lot liquidation). Companion to #4821. Tangential but uses FX rate infrastructure. |
 | #4697 `chore--use-calculation-amount` | nsandomeno | Draft | **Largely superseded by #4817.** Stalled since 2026-04-01. May still have residual naming/API changes not yet in #4817. |
 | #4686 `refactor--deposit-multicurrency-w-export-sumsub-deposit` | nsandomeno | Draft | Follow-up to #4671: multi-currency support in sumsub deposit export. Stalled since 2026-03-30. |
 | #4978 `fix/bfx-ticker-trailing-field` | sandipndev | Draft, **APPROVED by nicolasburtey** (2026-04-09) | **Bitfinex price poller fix:** Bitfinex silently added an 11th field to ticker API response, breaking BTC/USD price poller on staging. Adds placeholder field. Awaiting un-draft to merge. Directly relevant to price infrastructure (Gap 1 prerequisite). |
-| #4972 `worktree-add-publisher-for-chart` | Lakshyyaa | Open | **CoA event publisher:** `ChartNodeInitialized` events published to outbox. CHANGES_REQUESTED by sandipndev (2026-04-09). Tangential — useful for FX account setup notifications. |
 | #4986 `feat(time-events): add hourly time event producer` | sandipndev | Open | **Hourly time event producer** (replaces closed #4971). Adds `CoreTimeEvent::Hourly { hour }` variant and `HourlyProducerJob` mirroring `EndOfDayProducerJob`. Catchup capped to 24h. Could support periodic rate snapshot scheduling. No reviews yet. |
 | #4700 `feat/lana-admin-price-provider-control` | sebastienverreault | Draft | Admin UI for price provider configuration. Last updated 2026-04-08. Tangential to FX infrastructure. |
 | #4757 `task/lana-ec-impl-019d4a85` | bodymindarts | Draft | **Eventually consistent account sets with EOD recalculation.** Eliminates advisory-lock contention on account set balance rows. Infrastructure improvement tangential to FX but relevant to multi-currency throughput. Latest commit (2026-04-09, HonestMajority): bumps cala-ledger to `262a20be` with race fix and breaking change (refuse member changes when member has history). nicolasburtey asked about manual backdated transactions. |
@@ -88,7 +88,7 @@ These PRs have merged and form the foundation for the remaining work:
 - **#4817 (merged 2026-04-03)** significantly advances this gap: introduces generic `ExchangeRate<Base, Quote>` with `StaticCurrency` type params, `AnyReferenceRate` for currency-generic rate handling, `PriceClient` trait for per-provider fetching, and `Rate` enum (base vs quote expression). The old `PriceOfOneBTC` newtype is replaced by typed exchange rates.
 - **#4978 (open, sandipndev, approved 2026-04-09)** fixes Bitfinex price poller broken on staging — Bitfinex silently added an 11th field to their ticker API response. Immediate prerequisite for reliable BTC/USD rate data.
 - **#4869 (closed 2026-04-07 without merge)** explored rate lookup separation: `find_nearest_historical_exchange_rate` for historical lookups vs spot. Approach may be reattempted differently.
-- **#4960 (draft, nsandomeno, APPROVED by vindard + jirijakes 2026-04-09)** introduces spot vs historical rate separation in `core/price` with `find_nearest_historical_exchange_rate` and separate use-cases. Naming discussion resolved; both reviewers approved. Ready for merge once un-drafted.
+- **#4960 (✅ merged 2026-04-10, nsandomeno)** introduces spot vs historical rate separation in `core/price` with `find_nearest_historical_exchange_rate` and separate use-cases.
 - **#4923 (draft, Prabhat1308)** exploring rate history: `AggregatePriceHandler` now delivers aggregated prices to `exchange_rates` table and ephemeral outbox. No activity since 2026-04-07; may be stale.
 
 **What still needs to happen:**
@@ -123,9 +123,9 @@ Without these, `balance_functional` doesn't exist in the ledger. Revaluation nee
 
 **Affected templates:** `RECORD_DEPOSIT` (has `ReferenceRate` metadata from #4559, needs USD entry legs), `RECORD_WITHDRAWAL`, `FIAT_FX_CONVERSION_VIA_TRADING` (unique: USD leg source is proportional book cost, not spot rate).
 
-**Progress since last update (2026-04-09T14:07Z):**
-- **#4960 (draft, nsandomeno, APPROVED by vindard + jirijakes 2026-04-09)** directly addresses this gap: introduces `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs and a separate `record_any_currency_deposit` use-case in `CoreDeposit`. 743 additions. Both vindard and jirijakes approved. New commits (2026-04-09 afternoon): moved param defs to associated function, fixed currency mismatch error fields/message, moved currency validation and account-active validation to `DepositAccount` entity. Ready for merge once un-drafted.
-  - Prior review items resolved: omnibus account selection fix (`bd33bf3`), naming discussion concluded
+**Progress since last update (2026-04-10T14:27Z):**
+- **#4960 (✅ merged 2026-04-10, nsandomeno)** resolves this gap for deposits: `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs and a separate `record_any_currency_deposit` use-case in `CoreDeposit`. 743 additions.
+- **Remaining:** `RECORD_WITHDRAWAL` and `FIAT_FX_CONVERSION_VIA_TRADING` still need dual-currency legs.
 
 ---
 
@@ -267,23 +267,22 @@ Architectural:
 ```
 
 **Parallelizable now (template layer):**
-- Gap 2 — **APPROVED** via #4960 (nsandomeno): `AnyCurrencyRecordDeposit` with dual-currency legs, awaiting un-draft to merge
+- Gap 2 — **PARTIALLY RESOLVED** via #4960 (merged 2026-04-10): deposit dual-currency legs done. Withdrawal still needed.
 - Gap 3 — conversion book-value leg in #4958; settlement book-value leg in #4970
 - Gap 5 — **addressed** in #4970: rate metadata on all 3 FX templates (pending merge)
 
 **Parallelizable now (other layers):**
-- Gap 1 (application-layer — #4817 landed typed rate infrastructure; #4960 spot/historical separation APPROVED; #4923 exploring rate history (stale); fiat rate source adapter still needed)
+- Gap 1 (application-layer — #4817 landed typed rate infrastructure; #4960 merged spot/historical separation; #4923 exploring rate history (stale); fiat rate source adapter still needed)
 - Gap 4 (architectural, no runtime dependency — prerequisite cleanup landed in #4817, migration itself remains)
 
 **PR chain in review:**
 - ~~#4430 (core/fx scaffolding)~~ **MERGED 2026-04-09** — now on main
-- #4957 (foundation types) ← #4958 (orchestration) ← #4970 (settlement book-value + rate metadata + integration tests) — all rebased onto main (2026-04-10), still drafts with no human review
-- #4960 (deposit dual-currency template) **APPROVED by vindard + jirijakes** — ready for merge once un-drafted
+- ~~#4960 (deposit dual-currency template)~~ **MERGED 2026-04-10** — now on main
+- #4957 (foundation types) ← #4958 (orchestration) ← #4970 (settlement book-value + rate metadata + integration tests) — all draft, rebased on main. jirijakes started reviewing #4957.
 
 **Infrastructure PRs:**
 - #4978 (bfx-client fix, **approved**) — Bitfinex price poller broken on staging; still draft despite approval
 - #4986 (hourly time events, replaces closed #4971) — could support periodic FX rate tasks
-- #4972 (CoA event publisher) — tangential to FX account setup
 
 ---
 
@@ -335,11 +334,9 @@ inflow for EUR→USD at the position level.
 
 ### Template layer — buildable now with placeholder values
 
-**Gap 2** — **APPROVED, READY TO MERGE** via #4960 (nsandomeno):
-- `AnyCurrencyRecordDeposit` template with dual-currency entry legs — APPROVED by vindard + jirijakes, awaiting un-draft
+**Gap 2** — **PARTIALLY RESOLVED** (#4960 merged 2026-04-10):
+- ✅ `AnyCurrencyRecordDeposit` template with dual-currency entry legs — merged
 - Remaining: RECORD_WITHDRAWAL, FIAT_FX_CONVERSION_VIA_TRADING still need dual-currency legs
-- Design questions from review resolved; validation moved to `DepositAccount` entity
-- #4671 delivered currency-aware templates and `AnyCurrencyUnits` — build on this foundation
 
 **Gap 3** — **PARTIALLY ADDRESSED** via #4958 + #4970:
 - Conversion book-value leg (entries ㉓-㉔, ㉗-㉘) in #4958
@@ -357,7 +354,7 @@ inflow for EUR→USD at the position level.
 
 **Gap 1** (cross-currency rate lookup):
 - ~~Generalize rate types to accept generic currency pairs~~ — **done** via #4817 (`ExchangeRate<Base, Quote>`, `AnyReferenceRate`)
-- ~~Separate historical from spot lookup~~ — **done** via #4960 (spot vs historical use-cases in `core/price`), APPROVED by vindard + jirijakes
+- ~~Separate historical from spot lookup~~ — **done** via #4960 (merged 2026-04-10, spot vs historical use-cases in `core/price`)
 - **BTC/USD price poller broken on staging** — #4978 fixes Bitfinex ticker field change; approved but still draft
 - Historical rate storage — #4923 (Prabhat1308) exploring `exchange_rates` table + outbox delivery (stale since 2026-04-07)
 - Add a fiat rate source adapter for EUR/USD, GBP/USD, etc. (separate from the BTC price providers)
