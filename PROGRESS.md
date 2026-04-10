@@ -284,6 +284,30 @@ The bottleneck is human review of vindard's #4957→#4958→#4970 chain.
 
 ---
 
+## Next Actions by Person
+
+*Updated 2026-04-10.*
+
+### vindard
+1. **Un-draft and merge #4960** (nsandomeno's dual-currency deposit) — approved by vindard + jirijakes, just needs un-drafting. Clears Gap 2 for deposits.
+2. **Un-draft and merge #4978** (Bitfinex price poller fix) — approved, BTC/USD rates broken on staging until this lands.
+3. **Request reviewers on #4957** — zero human reviews, bottleneck for entire Fiat FX chain (#4957→#4958→#4970, ~2200 lines).
+4. **Rate Type Migration (Gap 4) — deferred until #4957 chain lands.**
+   Proposed as independent work while awaiting reviews, but premature because:
+   - Rename target (`ExchangeRate` → `ConversionRate` in `core/fx`) only exists in #4957, not on main.
+   - `ReferenceRate<B,Q>` wraps `ExchangeRate<B,Q>` from `core/price`. Moving it to `core/fx` without also moving `ExchangeRate<B,Q>` forces `core/fx` → `core/price` — the backwards dependency Gap 4 wants to eliminate. Needs alignment with bodymindarts on where shared rate primitives belong.
+   - Migrating on main now means rebasing all three in-flight PRs against moved types while they have zero reviews and may still change.
+   - `RateType` (`Spot`, `Closing`) belongs to the `exchange_rates` storage schema (Component 1, deferred). No table, no type.
+
+### nsandomeno
+1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is approved; withdrawal is the natural follow-up to complete Gap 2.
+
+### jirijakes
+1. **Continue collateral lot tracking** (#4959) — active development, gates BTC collateral revaluation (#4821).
+2. **Review #4957 chain** — already reviewed #4960; familiar with FX domain.
+
+---
+
 ## Legend
 
 | Symbol | Meaning |
