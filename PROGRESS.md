@@ -1,7 +1,7 @@
 # FX Infrastructure: Progress Overview
 
 *Derived from SPEC.md and IMPLEMENTATION_STATUS.md. Not a source of truth — see those documents for details.*
-*Last updated: 2026-04-10T14:27Z*
+*Last updated: 2026-04-11T04:24Z*
 
 ## Naming Map
 
@@ -136,17 +136,17 @@ Infrastructure merged to main that both chains build upon.
 | Item | Status | Owner |
 |------|--------|-------|
 | `core/fx` crate scaffolding + CoA (3200, 4200, 5100) | ✅ Merged | vindard |
-| Domain primitives (`FxConversion`, `FunctionalRate`, etc.) | 🔵 Written, no review | vindard |
-| `FxPosition` entity (Selinger accumulator) | 🔵 Written, no review | vindard |
+| Domain primitives (`FxConversion`, `FunctionalRate`, etc.) | 🔶 Review in progress (jirijakes) | vindard |
+| `FxPosition` entity (Selinger accumulator) | 🔶 Review in progress (jirijakes) | vindard |
 | CALA templates (conversion 6-entry, G/L clearing, settlement 4-entry) | 🔵 Written, no review | vindard |
 | `CoreFx::convert_fiat_fx()` + `settle_fx()` orchestration | 🔵 Written, no review | vindard |
 | Settlement book-value leg + `OutflowResult` | 🔵 Written, no review | vindard |
 | Rate metadata on all 3 FX templates | 🔵 Written, no review | vindard |
 | Integration tests (conversion + settlement) | 🔵 Written, no review | vindard |
 
-**PR chain:** #4957 → #4958 → #4970 (all draft, rebased on main). #4957 has initial comment from jirijakes.
+**PR chain:** #4957 → #4958 → #4970 (all draft, rebased 2026-04-11). #4957 review in progress — jirijakes asked about `lib/money` currency usage (2026-04-10); vindard responded with 6 follow-up commits: added `CurrencyCode::EUR`, split currency lists into `FIAT`/`CRYPTO`, added `is_fiat()`, moved functional currency to `AppConfig`, cleaned up unused code.
 **Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6).
-**Next action:** Get full review on #4957 (foundation) — it gates the entire chain.
+**Next action:** Continue review iteration on #4957 with jirijakes — address any further feedback, then move to #4958/#4970.
 
 ---
 
@@ -222,13 +222,13 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 
 | Item | Status | Owner |
 |------|--------|-------|
-| Collateral lot tracking (`CollateralLot` entity) | 🔵 Active development | jirijakes |
+| Collateral lot tracking (`CollateralLot` entity, PR #4959) | 🔶 Active development, Prabhat1308 reviewing | jirijakes |
 | BTC collateral revaluation (PR #4821) | 🔶 Open, early | jirijakes |
 | Both-sides revaluation template (`collateral_revalue`) | ⬜ Not started | — |
 | Collateral EndOfDay job chain | ⬜ Not started | — |
 | Collateral-vs-owned BTC boundary (for Fair Value Reval) | ⬜ Not started | — |
 
-**Next action:** #4959 (lot tracking) is actively developed — 3 commits on 2026-04-10. Template and jobs can proceed in parallel.
+**Next action:** #4959 (lot tracking) actively developed — 9 commits through 2026-04-10 (spot price on lots, idempotency guards, fallible methods, required liquidation ID, current price on release/liquidation). Prabhat1308 reviewing. Template and jobs can proceed in parallel.
 
 ---
 
@@ -266,30 +266,30 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 
 | PR | What | Status | Impact |
 |----|------|--------|--------|
-| #4978 | Bitfinex price poller fix (11th field) | 🟢 Approved, awaiting un-draft | BTC/USD rates broken on staging |
-| #4986 | Hourly time event producer | Open, no review | Could support periodic rate snapshots |
-| #4757 | Eventually consistent account sets | Draft | Multi-currency throughput |
+| #4978 | Bitfinex price poller fix (11th field) | ✅ Merged 2026-04-10 | BTC/USD rates restored on staging |
+| #4986 | Hourly time event producer | 🔶 Draft (tests failing, needs rebase) | Could support periodic rate snapshots |
+| #4757 | Eventually consistent account sets | 🔶 Draft (cala-ledger upgraded to 0.15.0) | Multi-currency throughput |
 
 ---
 
 ## Critical Path (Fiat FX)
 
 ```
- #4960 ✅ ──► Review #4957 chain ──► Merge chain ──► Revaluation ──► Done
- (merged)     (jirijakes started)    (~2200 lines)   (all new work)
+ #4960 ✅ ──► #4957 review ──► #4958/#4970 review ──► Merge chain ──► Revaluation ──► Done
+ (merged)     (in progress)    (no review yet)        (~2200 lines)   (all new work)
 ```
 
-The bottleneck is full human review of vindard's #4957→#4958→#4970 chain.
+The bottleneck is human review of vindard's #4957→#4958→#4970 chain. #4957 review is actively iterating with jirijakes (6 follow-up commits pushed 2026-04-11).
 
 ---
 
 ## Next Actions by Person
 
-*Updated 2026-04-10.*
+*Updated 2026-04-11.*
 
 ### vindard
-1. **Un-draft and merge #4978** (Bitfinex price poller fix) — approved, BTC/USD rates broken on staging until this lands.
-2. **Drive review of #4957 chain** — jirijakes has started reviewing; get to full approval. Bottleneck for entire Fiat FX chain (~2200 lines across #4957→#4958→#4970).
+1. ~~**Un-draft and merge #4978**~~ — ✅ merged 2026-04-10, BTC/USD rates restored on staging.
+2. **Continue review iteration on #4957** — jirijakes reviewing; 6 follow-up commits pushed (EUR in CurrencyCode, FIAT/CRYPTO split, `is_fiat()`, functional currency in AppConfig, cleanup). Await next round of feedback. Bottleneck for entire Fiat FX chain (~2200 lines across #4957→#4958→#4970).
 3. **Rate Type Migration (Gap 4) — deferred until #4957 chain lands.**
    Proposed as independent work while awaiting reviews, but premature because:
    - Rename target (`ExchangeRate` → `ConversionRate` in `core/fx`) only exists in #4957, not on main.
@@ -298,11 +298,11 @@ The bottleneck is full human review of vindard's #4957→#4958→#4970 chain.
    - `RateType` (`Spot`, `Closing`) belongs to the `exchange_rates` storage schema (Component 1, deferred). No table, no type.
 
 ### nsandomeno
-1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is approved; withdrawal is the natural follow-up to complete Gap 2.
+1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is merged; withdrawal is the natural follow-up to complete Gap 2.
 
 ### jirijakes
-1. **Continue collateral lot tracking** (#4959) — active development, gates BTC collateral revaluation (#4821).
-2. **Review #4957 chain** — already reviewed #4960; familiar with FX domain.
+1. **Continue collateral lot tracking** (#4959) — active development (9 commits, Prabhat1308 reviewing), gates BTC collateral revaluation (#4821).
+2. **Continue reviewing #4957 chain** — initial feedback addressed by vindard; continue to full approval.
 
 ---
 
