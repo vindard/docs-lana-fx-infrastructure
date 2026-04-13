@@ -1,7 +1,7 @@
 # FX Infrastructure: Progress Overview
 
 *Derived from SPEC.md and IMPLEMENTATION_STATUS.md. Not a source of truth — see those documents for details.*
-*Last updated: 2026-04-11T04:24Z*
+*Last updated: 2026-04-13T15:08Z*
 
 ## Naming Map
 
@@ -40,7 +40,7 @@ FIAT FX CHAIN                              BTC CHAIN
 ┌───────────────────────┐                  ┌───────────────────────┐
 │  Dual-Currency        │                  │  Collateral           │
 │  Entries              │                  │  Revaluation          │
-│  █████████████████░░░ │ ~85%             │  ████░░░░░░░░░░░░░░░░ │ ~20%
+│  █████████████████░░░ │ ~85%             │  █████░░░░░░░░░░░░░░░ │ ~25%
 └───────────┬───────────┘                  └───────────┬───────────┘
             │                                          │
             │ revaluation needs                        │ fair-value collector
@@ -144,9 +144,9 @@ Infrastructure merged to main that both chains build upon.
 | Rate metadata on all 3 FX templates | 🔵 Written, no review | vindard |
 | Integration tests (conversion + settlement) | 🔵 Written, no review | vindard |
 
-**PR chain:** #4957 → #4958 → #4970 (all draft, rebased 2026-04-11). #4957 review in progress — jirijakes asked about `lib/money` currency usage (2026-04-10); vindard responded with 6 follow-up commits: added `CurrencyCode::EUR`, split currency lists into `FIAT`/`CRYPTO`, added `is_fiat()`, moved functional currency to `AppConfig`, cleaned up unused code.
+**PR chain:** #4957 → #4958 → #4970 (all draft, rebased 2026-04-11). #4957 review in progress — jirijakes gave initial feedback (2026-04-10); vindard responded with 6 follow-up commits. **Latest (2026-04-11T12:05Z):** jirijakes suggests `is_fiat()` should be a property of `Currency` rather than `CurrencyCode` — vindard has not yet responded.
 **Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6).
-**Next action:** Continue review iteration on #4957 with jirijakes — address any further feedback, then move to #4958/#4970.
+**Next action:** Vindard to respond to jirijakes' latest feedback on `Currency` vs `CurrencyCode` for `is_fiat()`, then continue review iteration.
 
 ---
 
@@ -215,20 +215,20 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 
 ## BTC Chain
 
-### Collateral Revaluation                                             ~20%
+### Collateral Revaluation                                             ~25%
 ```
-██████░░░░░░░░░░░░░░░░░░░░░░░░
+████████░░░░░░░░░░░░░░░░░░░░░░
 ```
 
 | Item | Status | Owner |
 |------|--------|-------|
-| Collateral lot tracking (`CollateralLot` entity, PR #4959) | 🔶 Active development, Prabhat1308 reviewing | jirijakes |
+| Collateral lot tracking (`CollateralLot` entity, PR #4959) | 🟢 Approved by Prabhat1308 (2026-04-13), 13 commits | jirijakes |
 | BTC collateral revaluation (PR #4821) | 🔶 Open, early | jirijakes |
 | Both-sides revaluation template (`collateral_revalue`) | ⬜ Not started | — |
 | Collateral EndOfDay job chain | ⬜ Not started | — |
 | Collateral-vs-owned BTC boundary (for Fair Value Reval) | ⬜ Not started | — |
 
-**Next action:** #4959 (lot tracking) actively developed — 9 commits through 2026-04-10 (spot price on lots, idempotency guards, fallible methods, required liquidation ID, current price on release/liquidation). Prabhat1308 reviewing. Template and jobs can proceed in parallel.
+**Next action:** #4959 (lot tracking) approved by Prabhat1308 (2026-04-13) — 13 commits, rebased 2026-04-13. New work: amount validation, status inside events, panic guards. Ready to merge (needs second approval or maintainer merge). Template and jobs can proceed in parallel.
 
 ---
 
@@ -267,8 +267,8 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | PR | What | Status | Impact |
 |----|------|--------|--------|
 | #4978 | Bitfinex price poller fix (11th field) | ✅ Merged 2026-04-10 | BTC/USD rates restored on staging |
-| #4986 | Hourly time event producer | 🔶 Draft (tests failing, needs rebase) | Could support periodic rate snapshots |
 | #4757 | Eventually consistent account sets | 🔶 Draft (cala-ledger upgraded to 0.15.0) | Multi-currency throughput |
+| #5041 | Bump cala-ledger to 0.15.1 | 🔶 Draft (Lakshyyaa, 2026-04-13) | Ledger infrastructure |
 
 ---
 
@@ -285,24 +285,20 @@ The bottleneck is human review of vindard's #4957→#4958→#4970 chain. #4957 r
 
 ## Next Actions by Person
 
-*Updated 2026-04-11.*
+*Updated 2026-04-13.*
 
 ### vindard
-1. ~~**Un-draft and merge #4978**~~ — ✅ merged 2026-04-10, BTC/USD rates restored on staging.
-2. **Continue review iteration on #4957** — jirijakes reviewing; 6 follow-up commits pushed (EUR in CurrencyCode, FIAT/CRYPTO split, `is_fiat()`, functional currency in AppConfig, cleanup). Await next round of feedback. Bottleneck for entire Fiat FX chain (~2200 lines across #4957→#4958→#4970).
+1. ~~**Un-draft and merge #4978**~~ — ✅ merged 2026-04-10.
+2. **Respond to jirijakes' latest feedback on #4957** — jirijakes (2026-04-11T12:05Z) suggests `is_fiat()` should be on `Currency` not `CurrencyCode`. Unaddressed. Bottleneck for entire Fiat FX chain (~2200 lines across #4957→#4958→#4970).
 3. **Rate Type Migration (Gap 4) — deferred until #4957 chain lands.**
-   Proposed as independent work while awaiting reviews, but premature because:
-   - Rename target (`ExchangeRate` → `ConversionRate` in `core/fx`) only exists in #4957, not on main.
-   - `ReferenceRate<B,Q>` wraps `ExchangeRate<B,Q>` from `core/price`. Moving it to `core/fx` without also moving `ExchangeRate<B,Q>` forces `core/fx` → `core/price` — the backwards dependency Gap 4 wants to eliminate. Needs alignment with bodymindarts on where shared rate primitives belong.
-   - Migrating on main now means rebasing all three in-flight PRs against moved types while they have zero reviews and may still change.
-   - `RateType` (`Spot`, `Closing`) belongs to the `exchange_rates` storage schema (Component 1, deferred). No table, no type.
+   Premature because rename target (`ExchangeRate` → `ConversionRate`) only exists in #4957, not on main. See previous rationale.
 
 ### nsandomeno
 1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is merged; withdrawal is the natural follow-up to complete Gap 2.
 
 ### jirijakes
-1. **Continue collateral lot tracking** (#4959) — active development (9 commits, Prabhat1308 reviewing), gates BTC collateral revaluation (#4821).
-2. **Continue reviewing #4957 chain** — initial feedback addressed by vindard; continue to full approval.
+1. **Merge #4959 (collateral lot tracking)** — approved by Prabhat1308 (2026-04-13), 13 commits. Ready for merge or second approval. Gates BTC collateral revaluation (#4821).
+2. **Continue reviewing #4957 chain** — latest feedback posted (2026-04-11); awaiting vindard's response before continuing.
 
 ---
 
