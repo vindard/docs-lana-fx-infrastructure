@@ -303,6 +303,15 @@ Major milestone: #4957 and #5048 both merged today. The foundation chain is full
 ### nsandomeno
 1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is merged; withdrawal is the natural follow-up to complete Gap 2.
 
+### thevaibhav-dixit
+1. **Finish #5055 (deposit public events → AnyMinorUnits)** — address nsandomeno's review feedback on Sumsub `currencyType` needing dynamic resolution from `CurrencyCode`.
+2. **Dual-currency `RECORD_WITHDRAWAL`** — could pair with nsandomeno on this; #5055 advances the deposit module's multicurrency migration which is prerequisite context.
+3. **Continue deposit multicurrency migration** — #5055 is the first step; follow-ups likely needed for full `PublicDeposit`/`PublicWithdrawal` multicurrency support.
+
+### Prabhat1308
+1. **Revive #4923 (Rate History)** — stale since 2026-04-07. `AggregatePriceHandler` delivering to `exchange_rates` table + outbox. Relevant to Gap 1 (historical rate lookup). Requested reviewers: nsandomeno, vindard.
+2. **Review FX chain PRs** — available as reviewer for #4958/#4970 given familiarity with `CalculationAmount<C>` (#4421) which underpins the exchange rate types.
+
 ### jirijakes
 1. ~~**Merge #4959 (collateral lot tracking)**~~ — ✅ merged 2026-04-14.
 2. ~~**Review #5048 (AnyCurrency refactor)**~~ — ✅ approved 2026-04-14.
