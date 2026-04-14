@@ -98,13 +98,14 @@ Infrastructure merged to main that both chains build upon.
 
 | Item | PR | Owner |
 |------|----|-------|
-| `CurrencyCode`, `CurrencySet`, `CurrencyMap`, `AnyCurrency` | #4497, #4531, #4414 | bodymindarts |
+| `CurrencyCode`, `CurrencySet`, `CurrencyMap`, `AnyCurrency` | #4497, #4531, #4414 | bodymindarts, thevaibhav-dixit |
+| `MinorUnits` safety: generic `Mul`, checked arithmetic, `FormatCurrency` trait | #4524, #4553, #4584 | thevaibhav-dixit |
 | `CalculationAmount<C>` — high-precision financial arithmetic | #4421 | bodymindarts |
 | `QuantizationPolicy` — currency-specific rounding/precision | #4668 | bodymindarts |
 | `ExchangeRate<B,Q>` generics + `ReferenceRate` + `AnyReferenceRate` | #4817 | bodymindarts |
 | `PriceClient` trait — per-provider price fetch with aggregation | #4817 | bodymindarts |
 
-**Fiat FX chain also has** chain-specific foundation work already merged: currency-aware deposit infrastructure (#4561, #4591, #4616, #4671), rate metadata on deposits (#4559), and `core/fx` crate scaffolding (#4430). These are reflected in the Fiat FX stages above rather than here because the BTC chain does not depend on them.
+**Fiat FX chain also has** chain-specific foundation work already merged: currency-aware deposit infrastructure (#4561, #4591, #4616, #4671), rate metadata on deposits (#4559), `core/fx` crate scaffolding (#4430), and deposit public event multicurrency migration (#5055, in progress). These are reflected in the Fiat FX stages above rather than here because the BTC chain does not depend on them.
 
 ---
 

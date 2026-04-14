@@ -30,8 +30,11 @@ These PRs have merged and form the foundation for the remaining work:
 | PR | Author | Merged | What it delivered |
 |----|--------|--------|-------------------|
 | #4497 | thevaibhav-dixit | 2026-03-23 | Modularised money crate, simplified Currency trait, added `AnyCurrency` |
+| #4524 | thevaibhav-dixit | 2026-03-23 | **SignedMinorUnits API:** `Mul<u64>` generic over `StaticCurrency` (was Usd-hardcoded), `try_from_btc`/`try_from_usd` returning `Result` instead of panicking |
 | #4531 | thevaibhav-dixit | 2026-03-23 | Removed currency-specific proxy methods from money |
 | #4414 | bodymindarts | 2026-03-18 | Added `CurrencyCode`, `CurrencySet`, `CurrencyMap`, `RestrictedCurrencyMap` |
+| #4553 | thevaibhav-dixit | 2026-03-25 | **Checked arithmetic for MinorUnits:** Removed unsafe `Add`/`Sub`/`Mul` operator impls, added `checked_add`/`checked_sub` returning `Result`. Fixed unsafe liquidation subtraction. |
+| #4584 | thevaibhav-dixit | 2026-03-25 | **FormatCurrency trait:** Generic `formatted()` via `FormatCurrency` trait, replaces ad-hoc `formatted_usd()`/`formatted_btc()` with locale-aware output using rusty-money |
 | #4561 | nsandomeno | 2026-03-25 | Made `DepositAccountSetCatalog` currency-aware |
 | #4591 | nsandomeno | 2026-03-26 | Replaced account set resolution with local CALA account set ID |
 | #4616 | thevaibhav-dixit | 2026-03-27 | Currency-aware deposit account entity |
