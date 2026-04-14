@@ -1,7 +1,7 @@
 # FX Infrastructure: Progress Overview
 
 *Derived from SPEC.md and IMPLEMENTATION_STATUS.md. Not a source of truth — see those documents for details.*
-*Last updated: 2026-04-14T12:45Z*
+*Last updated: 2026-04-14T18:59Z*
 
 ## Naming Map
 
@@ -49,7 +49,7 @@ FIAT FX CHAIN                              BTC CHAIN
 ┌───────────────────────┐                  ┌───────────────────────┐
 │  Trading Account      │                  │  Fair Value           │
 │  + Realized G/L       │                  │  Revaluation          │
-│  ██████████░░░░░░░░░░ │ ~50%             │  ░░░░░░░░░░░░░░░░░░░░ │ 0%
+│  ███████████░░░░░░░░░ │ ~55%             │  ░░░░░░░░░░░░░░░░░░░░ │ 0%
 └───────────┬───────────┘                  └───────────────────────┘
             │
             │ revaluation reads from
@@ -128,26 +128,26 @@ Infrastructure merged to main that both chains build upon.
 
 ---
 
-### Trading Account + Realized G/L                                     ~50%
+### Trading Account + Realized G/L                                     ~55%
 ```
-██████████████░░░░░░░░░░░░░░░░
+████████████████░░░░░░░░░░░░░░
 ```
 
 | Item | Status | Owner |
 |------|--------|-------|
 | `core/fx` crate scaffolding + CoA (3200, 4200, 5100) | ✅ Merged | vindard |
-| Domain primitives (`FxConversion`, `FunctionalRate`, etc.) | 🔶 Review in progress (jirijakes) | vindard |
-| `FxPosition` entity (Selinger accumulator) | 🔶 Review in progress (jirijakes) | vindard |
-| `AnyCurrency` integration (replaces `CurrencyCode` + manual precision) | 🟢 Approved (#5048) by jirijakes | vindard |
-| CALA templates (conversion 6-entry, G/L clearing, settlement 4-entry) | 🔵 Written, no review | vindard |
-| `CoreFx::convert_fiat_fx()` + `settle_fx()` orchestration | 🔵 Written, no review | vindard |
-| Settlement book-value leg + `OutflowResult` | 🔵 Written, no review | vindard |
-| Rate metadata on all 3 FX templates | 🔵 Written, no review | vindard |
-| Integration tests (conversion + settlement) | 🔵 Written, no review | vindard |
+| Domain primitives (`FxConversion`, `FunctionalRate`, etc.) | ✅ Merged (#4957, 2026-04-14) | vindard |
+| `FxPosition` entity (Selinger accumulator) | ✅ Merged (#4957, 2026-04-14) | vindard |
+| `AnyCurrency` integration (replaces `CurrencyCode` + manual precision) | ✅ Merged (#5048, 2026-04-14) | vindard |
+| CALA templates (conversion 6-entry, G/L clearing, settlement 4-entry) | 🔵 Written, no review (#4958) | vindard |
+| `CoreFx::convert_fiat_fx()` + `settle_fx()` orchestration | 🔵 Written, no review (#4958) | vindard |
+| Settlement book-value leg + `OutflowResult` | 🔵 Written, no review (#4970) | vindard |
+| Rate metadata on all 3 FX templates | 🔵 Written, no review (#4970) | vindard |
+| Integration tests (conversion + settlement) | 🔵 Written, no review (#4970) | vindard |
 
-**PR chain:** #4957 → **#5048 (✅ approved by jirijakes 2026-04-14)** → #4958 → #4970 (all draft). jirijakes' `is_fiat()` feedback addressed in #5048. jirijakes left a minor follow-up on #4957 (2026-04-14) noting preference for `is_fiat()` on `Currency` trait — already implemented in #5048.
+**PR chain:** ~~#4957~~ ✅ → ~~#5048~~ ✅ → #5072 (currency registry macro, draft) → #4958 (draft) → #4970 (draft). Foundation chain fully merged. #5072 is a new intermediate cleanup PR.
 **Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6).
-**Next action:** vindard to un-draft #4957 and #5048 for merge. jirijakes to review #4958 and #4970.
+**Next action:** vindard to un-draft #5072, then #4958/#4970 for review. jirijakes to review #4958 and #4970.
 
 ---
 
@@ -229,7 +229,7 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | Collateral EndOfDay job chain | ⬜ Not started | — |
 | Collateral-vs-owned BTC boundary (for Fair Value Reval) | ⬜ Not started | — |
 
-**Next action:** #4959 merged 2026-04-14 (approved by Prabhat1308, vindard, nsandomeno). #4821 (BTC collateral revaluation) is now unblocked — jirijakes can build on the lot entity. Template and jobs can proceed in parallel.
+**Next action:** #4959 merged 2026-04-14 (approved by Prabhat1308, vindard, nsandomeno). #5064 merged 2026-04-14 (liquidation calculator robustness). #4821 (BTC collateral revaluation) is now unblocked — jirijakes can build on the lot entity. No activity on #4821 since 2026-04-07. Template and jobs can proceed in parallel.
 
 ---
 
@@ -269,6 +269,8 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 |----|------|--------|--------|
 | #4978 | Bitfinex price poller fix (11th field) | ✅ Merged 2026-04-10 | BTC/USD rates restored on staging |
 | #5063 | Bump cala 0.15.2, job 0.6.18, obix 0.2.21 | ✅ Merged 2026-04-14 | Dependency updates |
+| #5064 | Liquidation calculator robustness | ✅ Merged 2026-04-14 | Clamp-based calc, premium sign fix |
+| #5060 | Bank price snapshots to DW | 🔵 Open (sandipndev) | Historical price data in DW |
 | #4757 | Eventually consistent account sets | 🔶 Draft (cala-ledger upgraded to 0.15.0, 24 commits) | Multi-currency throughput |
 | ~~#5041~~ | ~~Bump cala-ledger to 0.15.1~~ | ❌ Closed 2026-04-13 | — |
 
@@ -277,11 +279,11 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 ## Critical Path (Fiat FX)
 
 ```
- #4960 ✅ ──► #4957 review ──► #5048 ✅ approved ──► #4958/#4970 review ──► Merge chain ──► Reval ──► Done
- (merged)     (iterating)      (jirijakes approved)  (no review yet)       (~2200 lines)   (all new)
+ #4960 ✅ ──► #4957 ✅ ──► #5048 ✅ ──► #5072 draft ──► #4958/#4970 review ──► Merge ──► Reval ──► Done
+ (merged)     (merged)     (merged)     (new cleanup)   (no review yet)        (~2 PRs)   (all new)
 ```
 
-The bottleneck has advanced: #5048 is approved by jirijakes (2026-04-14). Next step is vindard to un-draft #4957/#5048 for merge, then jirijakes reviews #4958 and #4970.
+Major milestone: #4957 and #5048 both merged today. The foundation chain is fully on main. Bottleneck is now #5072 (small cleanup) → #4958/#4970 review by jirijakes.
 
 ---
 
@@ -293,9 +295,9 @@ The bottleneck has advanced: #5048 is approved by jirijakes (2026-04-14). Next s
 1. ~~**Un-draft and merge #4978**~~ — ✅ merged 2026-04-10.
 2. ~~**Respond to jirijakes' latest feedback on #4957**~~ — ✅ responded 2026-04-13, opened #5048.
 3. ~~**Review #4959 (collateral lot tracking)**~~ — ✅ approved 2026-04-13, merged 2026-04-14.
-4. **Un-draft #4957 and #5048 for merge** — #5048 approved by jirijakes. Address jirijakes' minor follow-up on #4957 re: `is_fiat()` placement if needed, then mark ready.
-5. **Rate Type Migration (Gap 4) — deferred until #4957 chain lands.**
-   Premature because rename target (`ExchangeRate` → `ConversionRate`) only exists in #4957, not on main.
+4. ~~**Un-draft #4957 and #5048 for merge**~~ — ✅ both merged 2026-04-14.
+5. **Un-draft #5072 (currency registry macro)** — small cleanup, then un-draft #4958/#4970 for review.
+6. **Rate Type Migration (Gap 4)** — now unblocked since #4957 chain is on main. `ExchangeRate` → `ConversionRate` rename target exists on main.
 
 ### nsandomeno
 1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is merged; withdrawal is the natural follow-up to complete Gap 2.
@@ -303,8 +305,8 @@ The bottleneck has advanced: #5048 is approved by jirijakes (2026-04-14). Next s
 ### jirijakes
 1. ~~**Merge #4959 (collateral lot tracking)**~~ — ✅ merged 2026-04-14.
 2. ~~**Review #5048 (AnyCurrency refactor)**~~ — ✅ approved 2026-04-14.
-3. **Review #4958 and #4970** — next in the FX chain after #5048. Conversion orchestration and settlement book-value leg.
-4. **Continue #4821 (BTC collateral revaluation)** — now unblocked by #4959 merge.
+3. **Review #4958 and #4970** — next in the FX chain. Foundation is merged; these are conversion orchestration and settlement book-value leg.
+4. **Continue #4821 (BTC collateral revaluation)** — unblocked by #4959 merge. No updates since 2026-04-07.
 
 ---
 
