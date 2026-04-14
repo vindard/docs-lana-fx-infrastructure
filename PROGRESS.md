@@ -20,6 +20,27 @@ This document uses descriptive names. The SPEC and IMPLEMENTATION_STATUS use leg
 
 ---
 
+## Overall Progress — ~35% of non-deferred SPEC
+
+| Stage | SPEC Components | Weight | Progress | Weighted |
+|-------|----------------|--------|----------|----------|
+| Shared Foundation | §2 current state | ~10% | 100% | 10% |
+| Dual-Currency Entries | C3 (partial) | ~10% | ~80% | 8% |
+| Trading Account + G/L | C4 | ~20% | ~55% | 11% |
+| Fiat Revaluation | C5 fiat, C7 fiat jobs | ~20% | 0% | 0% |
+| Collateral Revaluation | C6 | ~12% | ~30% | 3.5% |
+| BTC Fair Value Reval | C5 BTC, C7 BTC jobs | ~10% | 0% | 0% |
+| Closing Rate Storage | C1 minimal | ~6% | ~10% | 0.5% |
+| Rate Type Migration | C3/C4 architectural | ~5% | ~20% | 1% |
+| Job Orchestration | C7 (shared infra) | ~7% | ~5% | 0.5% |
+| **Total (non-deferred)** | | **100%** | | **~35%** |
+
+*Deferred items (full C1/C2, segregation, on-chain reconciliation, regulatory) are excluded — they are trigger-gated and not sequenced. Against the full SPEC including deferred work, overall completion is closer to ~21–25%. The non-deferred figure is used here because deferred items each have specific trigger conditions and no one should be sequencing them yet.*
+
+*Methodology: weights reflect relative implementation effort estimated from SPEC pseudocode volume and dependency complexity. Progress percentages are derived from per-stage item counts and status symbols. Updated each status cycle.*
+
+---
+
 ## Dependency Graph
 
 ```
@@ -285,6 +306,25 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 ```
 
 Major milestone: #4957 and #5048 both merged today. The foundation chain is fully on main. Bottleneck is now #5072 (small cleanup) → #4958/#4970 review by jirijakes.
+
+---
+
+## Risks & Acceleration
+
+### Unowned work
+The three largest 0%-complete stages have **no owner and no started code**:
+- **Fiat Revaluation** (~20% of total) — 7 items, blocked upstream but SPEC has full pseudocode (Component 5)
+- **BTC Fair Value Revaluation** (~10% of total) — 4 items, blocked by collateral boundary + ASU 2023-08 sign-off
+- **Fiat rate source adapter** — hard prerequisite for fiat revaluation in production; no EUR/USD or GBP/USD rates exist today
+
+### Review bottleneck
+jirijakes is the primary reviewer for the FX chain and also the sole developer on the BTC chain. 5 written-but-unreviewed items in Trading Account (#4958, #4970) are waiting on him. Prabhat1308 is available as a second reviewer.
+
+### Highest-leverage actions (ordered)
+1. **Merge #5072 → #4958 → #4970** — Trading Account 55% → ~90%. Unblocks fiat revaluation.
+2. **Build dual-currency RECORD_WITHDRAWAL** — Dual-Currency Entries 80% → 100%. Removes last Gap 2 blocker.
+3. **Revive #4923 (rate history)** — Closing Rate Storage is a prerequisite for both revaluation chains. Stale 1 week.
+4. **Assign fiat revaluation owner** — the largest remaining body of work with no one driving it.
 
 ---
 
