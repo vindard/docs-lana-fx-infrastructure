@@ -20,20 +20,20 @@ This document uses descriptive names. The SPEC and IMPLEMENTATION_STATUS use leg
 
 ---
 
-## Overall Progress — ~35% of non-deferred SPEC
+## Overall Progress — ~34% of non-deferred SPEC
 
 | Stage | SPEC Components | Weight | Progress | Weighted |
 |-------|----------------|--------|----------|----------|
 | Shared Foundation | §2 current state | ~10% | 100% | 10% |
-| Dual-Currency Entries | C3 (partial) | ~10% | ~85% | 8.5% |
+| Dual-Currency Entries | C3 (partial) | ~12% | ~70% | 8.5% |
 | Trading Account + G/L | C4 | ~20% | ~55% | 11% |
 | Fiat Revaluation | C5 fiat, C7 fiat jobs | ~20% | 0% | 0% |
 | Collateral Revaluation | C6 | ~12% | ~30% | 3.5% |
 | BTC Fair Value Reval | C5 BTC, C7 BTC jobs | ~10% | 0% | 0% |
 | Closing Rate Storage | C1 minimal | ~6% | ~10% | 0.5% |
 | Rate Type Migration | C3/C4 architectural | ~5% | ~30% | 1.5% |
-| Job Orchestration | C7 (shared infra) | ~7% | ~5% | 0.5% |
-| **Total (non-deferred)** | | **100%** | | **~36%** |
+| Job Orchestration | C7 (shared infra) | ~5% | ~5% | 0.25% |
+| **Total (non-deferred)** | | **100%** | | **~34%** |
 
 *Deferred items (full C1/C2, segregation, on-chain reconciliation, regulatory) are excluded — they are trigger-gated and not sequenced. Against the full SPEC including deferred work, overall completion is closer to ~21–25%. The non-deferred figure is used here because deferred items each have specific trigger conditions and no one should be sequencing them yet.*
 
@@ -61,7 +61,7 @@ FIAT FX CHAIN                              BTC CHAIN
 ┌───────────────────────┐                  ┌───────────────────────┐
 │  Dual-Currency        │                  │  Collateral           │
 │  Entries              │                  │  Revaluation          │
-│  ██████████████████░░ │ ~85%             │  ██████░░░░░░░░░░░░░░ │ ~30%
+│  ██████████████░░░░░░ │ ~70%             │  ██████░░░░░░░░░░░░░░ │ ~30%
 └───────────┬───────────┘                  └───────────┬───────────┘
             │                                          │
             │ revaluation needs                        │ fair-value collector
@@ -132,9 +132,9 @@ Infrastructure merged to main that both chains build upon.
 
 ## Fiat FX Chain
 
-### Dual-Currency Entries                                              ~85%
+### Dual-Currency Entries                                              ~70%
 ```
-█████████████████████████░░░░░
+█████████████████████░░░░░░░░░
 ```
 
 | Item | Status | Owner |
@@ -145,8 +145,12 @@ Infrastructure merged to main that both chains build upon.
 | Spot vs historical rate separation | ✅ Merged (#4960) | nsandomeno |
 | Dual-currency `RECORD_DEPOSIT` (4-entry variant) | ✅ Merged (#4960) | nsandomeno |
 | Dual-currency `RECORD_WITHDRAWAL` (5 templates + use-cases) | 🔵 Written, no review (#5078) | nsandomeno |
+| Deposit module: public events → `AnyMinorUnits` | 🟢 Approved, pending un-draft (#5055) | thevaibhav-dixit |
+| Credit module: migrate `UsdCents` → `AnyMinorUnits` in public API | ⬜ Not started | thevaibhav-dixit |
 
-**Next action:** Review #5078 (withdrawal templates). #5055 (deposit public events → AnyMinorUnits) approved by nsandomeno, jirijakes commented.
+**Module multicurrency migration:** The deposit module is nearly done (#4671, #5055, #5078). The **credit module** is the other major migration target — `UsdCents` is deeply embedded across facilities, obligations, payments, disbursals, repayments, and their public events (including collection and collateral submodules). Same pattern as the deposit migration: entity types, public events, ledger templates, and GraphQL API all need to move from `UsdCents` to `AnyMinorUnits`/`AnyCurrency`.
+
+**Next action:** Review #5078 (withdrawal templates). Un-draft #5055. thevaibhav-dixit to begin credit module migration scoping.
 
 ---
 
@@ -349,8 +353,9 @@ jirijakes is the primary reviewer for the FX chain. 5 written-but-unreviewed ite
 3. **Withdrawal reval-unwind + settlement reval-unwind** — after #5078 merges. nsandomeno owns the withdrawal flow (#4960, #5078) so the 3-phase proportional reval-unwind on withdrawal and settlement fits naturally. Pairs with vindard's revaluation work.
 
 ### thevaibhav-dixit
-1. **Un-draft #5055 (deposit public events → AnyMinorUnits)** — approved by nsandomeno. jirijakes noted `is_fiat()` exists on `Currency` from #5048, which may resolve the Sumsub concern.
-2. **Continue deposit multicurrency migration** — follow-ups likely needed for full `PublicDeposit`/`PublicWithdrawal` multicurrency support.
+1. **Un-draft #5055 (deposit public events → AnyMinorUnits)** — approved by nsandomeno. jirijakes noted `is_fiat()` already exists on `Currency` from #5048, which may resolve the Sumsub concern.
+2. **Credit module multicurrency migration** — same pattern as deposit: migrate `UsdCents` → `AnyMinorUnits`/`AnyCurrency` across entities (`CreditFacilityProposal`, `Obligation`, `Payment`, `Disbursal`, `Repayment`), public events, ledger templates, and GraphQL types. Includes collection and collateral submodules. This is the largest remaining module migration — `UsdCents` is deeply embedded in the credit public API.
+3. **Complete deposit module migration** — remaining `UsdCents` references in deposit history types and any follow-ups from #5055.
 
 ### Prabhat1308
 1. **Closing Rate Storage (led by jirijakes)** — revive #4923 (`exchange_rates` table + outbox delivery), extend with closing rate capture and `(pair, date, rate_type)` lookup. Prabhat built `CalculationAmount<C>` (#4421) which underpins the rate types; jirijakes drives the API surface and integration requirements.

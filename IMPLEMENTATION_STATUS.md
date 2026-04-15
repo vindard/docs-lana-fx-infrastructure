@@ -138,6 +138,10 @@ Without these, `balance_functional` doesn't exist in the ledger. Revaluation nee
 - **#4960 (merged 2026-04-10)** resolves this gap for deposits: `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs.
 - **Remaining:** ~~`RECORD_WITHDRAWAL`~~ **IN PROGRESS (#5078)** and `FIAT_FX_CONVERSION_VIA_TRADING` still need dual-currency legs.
 
+**Module multicurrency migration (prerequisite for dual-currency entries to work end-to-end):**
+- **Deposit module** — partially migrated (#4671 entity threading, #5055 public events → `AnyMinorUnits` approved, #5078 withdrawal templates). Remaining: history types.
+- **Credit module** — **not started, significant scope.** `UsdCents` is deeply embedded across `CreditFacilityProposal`, `Obligation`, `Payment`, `PaymentAllocation`, `Disbursal`, `Repayment`, and their public events. Includes collection and collateral submodules. Same migration pattern as deposit: entity types → public events → ledger templates → GraphQL API. Owner: thevaibhav-dixit.
+
 ---
 
 ## Gap 3: Missing book-value leg on FX conversion and settlement templates
@@ -368,7 +372,9 @@ inflow for EUR→USD at the position level.
 
 **Gap 2** — **PARTIALLY RESOLVED** (#4960 merged 2026-04-10):
 - ✅ `AnyCurrencyRecordDeposit` template with dual-currency entry legs — merged
+- 🟢 Deposit public events → `AnyMinorUnits` — approved (#5055, thevaibhav-dixit), pending un-draft
 - 🔵 Non-functional-currency withdrawal templates (initiate, confirm, cancel, deny, revert) — written in #5078 (nsandomeno), no review yet
+- ⬜ Credit module multicurrency migration (`UsdCents` → `AnyMinorUnits` across entities, events, templates, GraphQL) — thevaibhav-dixit
 - Remaining: FIAT_FX_CONVERSION_VIA_TRADING still needs dual-currency legs
 
 **Gap 3** — **PARTIALLY ADDRESSED** via #4958 + #4970:
