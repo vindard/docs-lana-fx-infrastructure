@@ -1,7 +1,7 @@
 # FX Infrastructure: Progress Overview
 
 *Derived from SPEC.md and IMPLEMENTATION_STATUS.md. Not a source of truth — see those documents for details.*
-*Last updated: 2026-04-15T04:35Z*
+*Last updated: 2026-04-15T16:03Z*
 
 ## Naming Map
 
@@ -20,20 +20,20 @@ This document uses descriptive names. The SPEC and IMPLEMENTATION_STATUS use leg
 
 ---
 
-## Overall Progress — ~34% of non-deferred SPEC
+## Overall Progress — ~35% of non-deferred SPEC
 
 | Stage | SPEC Components | Weight | Progress | Weighted |
 |-------|----------------|--------|----------|----------|
 | Shared Foundation | §2 current state | ~10% | 100% | 10% |
-| Dual-Currency Entries | C3 (partial) | ~12% | ~70% | 8.5% |
+| Dual-Currency Entries | C3 (partial) | ~12% | ~75% | 9% |
 | Trading Account + G/L | C4 | ~20% | ~55% | 11% |
 | Fiat Revaluation | C5 fiat, C7 fiat jobs | ~20% | 0% | 0% |
 | Collateral Revaluation | C6 | ~12% | ~30% | 3.5% |
 | BTC Fair Value Reval | C5 BTC, C7 BTC jobs | ~10% | 0% | 0% |
 | Closing Rate Storage | C1 minimal | ~6% | ~10% | 0.5% |
-| Rate Type Migration | C3/C4 architectural | ~5% | ~30% | 1.5% |
+| Rate Type Migration | C3/C4 architectural | ~5% | ~40% | 2% |
 | Job Orchestration | C7 (shared infra) | ~5% | ~5% | 0.25% |
-| **Total (non-deferred)** | | **100%** | | **~34%** |
+| **Total (non-deferred)** | | **100%** | | **~35%** |
 
 *Deferred items (full C1/C2, segregation, on-chain reconciliation, regulatory) are excluded — they are trigger-gated and not sequenced. Against the full SPEC including deferred work, overall completion is closer to ~21–25%. The non-deferred figure is used here because deferred items each have specific trigger conditions and no one should be sequencing them yet.*
 
@@ -61,7 +61,7 @@ FIAT FX CHAIN                              BTC CHAIN
 ┌───────────────────────┐                  ┌───────────────────────┐
 │  Dual-Currency        │                  │  Collateral           │
 │  Entries              │                  │  Revaluation          │
-│  ██████████████░░░░░░ │ ~70%             │  ██████░░░░░░░░░░░░░░ │ ~30%
+│  ███████████████░░░░░ │ ~75%             │  ██████░░░░░░░░░░░░░░ │ ~30%
 └───────────┬───────────┘                  └───────────┬───────────┘
             │                                          │
             │ revaluation needs                        │ fair-value collector
@@ -90,8 +90,8 @@ CROSS-CUTTING (needed by specific stages)
 ┌───────────────────────┐   ┌─────────────────────────┐
 │  Closing Rate         │   │  Rate Type Migration    │
 │  Storage              │   │  (core/price → core/fx) │
-│  ██░░░░░░░░░░░░░░░░░░ │   │  ██████░░░░░░░░░░░░░░   │
-│  ~10%                 │   │  ~30%                   │
+│  ██░░░░░░░░░░░░░░░░░░ │   │  ████████░░░░░░░░░░░░   │
+│  ~10%                 │   │  ~40%                   │
 └───────────────────────┘   └─────────────────────────┘
  Minimal C1 subset for       Gap 4 — needed for Trading
  fiat + BTC revaluation      Account (Gap 5, Gap 6)
@@ -126,15 +126,15 @@ Infrastructure merged to main that both chains build upon.
 | `ExchangeRate<B,Q>` generics + `ReferenceRate` + `AnyReferenceRate` | #4817 | bodymindarts |
 | `PriceClient` trait — per-provider price fetch with aggregation | #4817 | bodymindarts |
 
-**Fiat FX chain also has** chain-specific foundation work already merged: currency-aware deposit infrastructure (#4561, #4591, #4616, #4671), rate metadata on deposits (#4559), `core/fx` crate scaffolding (#4430), and deposit public event multicurrency migration (#5055, approved — pending un-draft). These are reflected in the Fiat FX stages above rather than here because the BTC chain does not depend on them.
+**Fiat FX chain also has** chain-specific foundation work already merged: currency-aware deposit infrastructure (#4561, #4591, #4616, #4671), rate metadata on deposits (#4559), `core/fx` crate scaffolding (#4430), and deposit public event multicurrency migration (#5055, merged 2026-04-15). These are reflected in the Fiat FX stages above rather than here because the BTC chain does not depend on them.
 
 ---
 
 ## Fiat FX Chain
 
-### Dual-Currency Entries                                              ~70%
+### Dual-Currency Entries                                              ~75%
 ```
-█████████████████████░░░░░░░░░
+██████████████████████░░░░░░░░
 ```
 
 | Item | Status | Owner |
@@ -145,12 +145,13 @@ Infrastructure merged to main that both chains build upon.
 | Spot vs historical rate separation | ✅ Merged (#4960) | nsandomeno |
 | Dual-currency `RECORD_DEPOSIT` (4-entry variant) | ✅ Merged (#4960) | nsandomeno |
 | Dual-currency `RECORD_WITHDRAWAL` (5 templates + use-cases) | 🔵 Written, no review (#5078) | nsandomeno |
-| Deposit module: public events → `AnyMinorUnits` | 🟢 Approved, pending un-draft (#5055) | thevaibhav-dixit |
+| Deposit module: public events → `AnyMinorUnits` | ✅ Merged (#5055, 2026-04-15) | thevaibhav-dixit |
+| `Money` GraphQL output type + deposit/withdrawal outputs | 🟢 Approved, pending un-draft (#5083) | thevaibhav-dixit |
 | Credit module: migrate `UsdCents` → `AnyMinorUnits` in public API | ⬜ Not started | thevaibhav-dixit |
 
-**Module multicurrency migration:** The deposit module is nearly done (#4671, #5055, #5078). The **credit module** is the other major migration target — `UsdCents` is deeply embedded across facilities, obligations, payments, disbursals, repayments, and their public events (including collection and collateral submodules). Same pattern as the deposit migration: entity types, public events, ledger templates, and GraphQL API all need to move from `UsdCents` to `AnyMinorUnits`/`AnyCurrency`.
+**Module multicurrency migration:** The deposit module is mostly migrated (#4671, #5055 merged, #5083 approved, #5078 withdrawal templates). The **credit module** is the other major migration target — `UsdCents` is deeply embedded across facilities, obligations, payments, disbursals, repayments, and their public events (including collection and collateral submodules). Same pattern as the deposit migration: entity types, public events, ledger templates, and GraphQL API all need to move from `UsdCents` to `AnyMinorUnits`/`AnyCurrency`.
 
-**Next action:** Review #5078 (withdrawal templates). Un-draft #5055. thevaibhav-dixit to begin credit module migration scoping.
+**Next action:** Review #5078 (withdrawal templates). Un-draft #5083. thevaibhav-dixit to begin credit module migration scoping.
 
 ---
 
@@ -172,7 +173,7 @@ Infrastructure merged to main that both chains build upon.
 | Integration tests (conversion + settlement) | 🔵 Written, no review (#4970) | vindard |
 
 **PR chain:** ~~#4957~~ ✅ → ~~#5048~~ ✅ → ~~#5072~~ ❌ (closed) → #4958 (**open, ready for review**) → #4970 (draft). Foundation chain fully merged; #5072 dropped, chain simplified.
-**Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6). #5080 starts the rename.
+**Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6). #5080 (rename) merged; migration of rate types remains.
 **Next action:** jirijakes to review #4958, then #4970.
 
 ---
@@ -222,9 +223,9 @@ A minimal subset of SPEC Component 1 — just enough to persist and look up clos
 
 ---
 
-### Rate Type Migration (`core/price` → `core/fx`)                    ~30%
+### Rate Type Migration (`core/price` → `core/fx`)                    ~40%
 ```
-█████████░░░░░░░░░░░░░░░░░░░░░
+████████████░░░░░░░░░░░░░░░░░░
 ```
 
 SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadata types currently live in `core/price` and need to migrate. See IMPLEMENTATION_STATUS Gap 4.
@@ -232,7 +233,7 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | Item | Status | Owner |
 |------|--------|-------|
 | Prerequisite type refactoring (`ExchangeRate<B,Q>`, generics) | ✅ Merged (#4817) | bodymindarts |
-| Rename `ExchangeRate` → `ConversionRate` in `core/fx` (disambiguate) | 🔵 Written, no review (#5080) | vindard |
+| Rename `ExchangeRate` → `ConversionRate` in `core/fx` (disambiguate) | ✅ Merged (#5080, 2026-04-15) | vindard |
 | Migrate `ReferenceRate`, `AnyReferenceRate`, `RateType` to `core/fx` | ⬜ Not started | — |
 | Wire `core/price` as a rate source adapter behind `core/fx` | ⬜ Not started | — |
 
@@ -298,7 +299,9 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | #5077 | RBAC snake_case permission set names (collateral) | ✅ Merged 2026-04-15 | Collateral module authz fix |
 | #5063 | Bump cala 0.15.2, job 0.6.18, obix 0.2.21 | ✅ Merged 2026-04-14 | Dependency updates |
 | #5064 | Liquidation calculator robustness | ✅ Merged 2026-04-14 | Clamp-based calc, premium sign fix |
-| #5060 | Bank price snapshots to DW | 🔵 Open (sandipndev) | Historical price data in DW |
+| #5060 | Bank price snapshots to DW | ✅ Merged 2026-04-15 | Historical price data in DW |
+| #5090 | Fix FX account codes in BATS config | 🔶 Draft (nicolasburtey) | Fixes InvalidAccountCategory in simulation CI |
+| #5088 | Collateral in-liquidation + liquidated omnibus | 🔶 Draft (vindard) | Expanded liquidation templates, new omnibus accounts |
 | #4757 | Eventually consistent account sets | 🔶 Draft (cala-ledger upgraded to 0.15.0, 24 commits) | Multi-currency throughput |
 | ~~#5041~~ | ~~Bump cala-ledger to 0.15.1~~ | ❌ Closed 2026-04-13 | — |
 
@@ -307,12 +310,12 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 ## Critical Path (Fiat FX)
 
 ```
- #4960 ✅ ──► #4957 ✅ ──► #5048 ✅ ──► #4958 open ──► #4970 draft ──► Merge ──► Reval ──► Done
- (merged)     (merged)     (merged)     (ready for      (no review)    (~2 PRs)   (all new)
-                                         review)
+ #4960 ✅ ──► #4957 ✅ ──► #5048 ✅ ──► #5080 ✅ ──► #4958 open ──► #4970 draft ──► Reval ──► Done
+ (merged)     (merged)     (merged)     (merged)    (ready for      (no review)    (all new)
+                                                     review)
 ```
 
-#5072 closed, chain simplified. #4958 un-drafted and ready for review. Bottleneck is now jirijakes reviewing #4958 → #4970. In parallel: #5078 (withdrawal templates, nsandomeno) and #5080 (ConversionRate rename, vindard).
+#5080 merged. #4958 open and ready for review. Bottleneck is now jirijakes reviewing #4958 → #4970. In parallel: #5078 (withdrawal templates, nsandomeno), #5083 (Money type, thevaibhav-dixit), #5090 (FX config fix, nicolasburtey).
 
 ---
 
@@ -337,26 +340,28 @@ jirijakes is the primary reviewer for the FX chain. 5 written-but-unreviewed ite
 
 ## Next Actions by Person
 
-*Updated 2026-04-15.*
+*Updated 2026-04-15T16:03Z.*
 
 ### vindard
 1. ~~**Un-draft and merge #4978**~~ — ✅ merged 2026-04-10.
 2. ~~**Un-draft #4957 and #5048 for merge**~~ — ✅ both merged 2026-04-14.
 3. ~~**Un-draft #4958**~~ — ✅ un-drafted 2026-04-14, ready for review.
-4. **Get #5080 reviewed (ConversionRate rename)** — Gap 4 step 1, small mechanical rename in `core/fx`.
-5. **Un-draft #4970 once #4958 merges** — settlement book-value leg + rate metadata.
-6. **Continue Rate Type Migration (Gap 4)** — after #5080 merges, migrate `ReferenceRate`/`AnyReferenceRate` from `core/price` → `core/fx`.
-7. **Fiat Revaluation ownership** — can start in parallel with rate storage: cumulative_reval tracker (event-sourced entity), delta method worker, revaluation template (6100/6200 accounts), revaluation job chain (handler → collector → worker). All buildable with placeholder rate values. Natural extension of core/fx work. SPEC Component 5 has full pseudocode.
+4. ~~**Get #5080 reviewed (ConversionRate rename)**~~ — ✅ merged 2026-04-15 (Prabhat1308 approved).
+5. **Get #5090 reviewed and merged (FX account code fix)** — nicolasburtey authored; fixes simulation CI `InvalidAccountCategory`.
+6. **Un-draft #4970 once #4958 merges** — settlement book-value leg + rate metadata.
+7. **Continue Rate Type Migration (Gap 4)** — #5080 merged; now migrate `ReferenceRate`/`AnyReferenceRate` from `core/price` → `core/fx`.
+8. **Fiat Revaluation ownership** — can start in parallel with rate storage: cumulative_reval tracker (event-sourced entity), delta method worker, revaluation template (6100/6200 accounts), revaluation job chain (handler → collector → worker). All buildable with placeholder rate values. Natural extension of core/fx work. SPEC Component 5 has full pseudocode.
 
 ### nsandomeno
 1. **Finish #5078 (withdrawal dual-currency templates)** — 13 commits, 5 templates + use-cases. Get review.
-2. ~~**Review #5055**~~ — ✅ approved 2026-04-15.
+2. ~~**Review #5055**~~ — ✅ approved 2026-04-15, now merged.
 3. **Withdrawal reval-unwind + settlement reval-unwind** — after #5078 merges. nsandomeno owns the withdrawal flow (#4960, #5078) so the 3-phase proportional reval-unwind on withdrawal and settlement fits naturally. Pairs with vindard's revaluation work.
 
 ### thevaibhav-dixit
-1. **Un-draft #5055 (deposit public events → AnyMinorUnits)** — approved by nsandomeno. jirijakes noted `is_fiat()` already exists on `Currency` from #5048, which may resolve the Sumsub concern.
-2. **Credit module multicurrency migration** — same pattern as deposit: migrate `UsdCents` → `AnyMinorUnits`/`AnyCurrency` across entities (`CreditFacilityProposal`, `Obligation`, `Payment`, `Disbursal`, `Repayment`), public events, ledger templates, and GraphQL types. Includes collection and collateral submodules. This is the largest remaining module migration — `UsdCents` is deeply embedded in the credit public API.
-3. **Complete deposit module migration** — remaining `UsdCents` references in deposit history types and any follow-ups from #5055.
+1. ~~**Un-draft #5055 (deposit public events → AnyMinorUnits)**~~ — ✅ merged 2026-04-15.
+2. **Un-draft #5083 (`Money` GraphQL type + deposit/withdrawal output migration)** — siddhart1o1 approved frontend. Eliminates `try_into().expect()` panics on non-USD accounts. 5 commits, 58 files.
+3. **Credit module multicurrency migration** — same pattern as deposit: migrate `UsdCents` → `AnyMinorUnits`/`AnyCurrency` across entities (`CreditFacilityProposal`, `Obligation`, `Payment`, `Disbursal`, `Repayment`), public events, ledger templates, and GraphQL types. Includes collection and collateral submodules. This is the largest remaining module migration — `UsdCents` is deeply embedded in the credit public API.
+4. **Complete deposit module migration** — remaining `UsdCents` references in deposit history types and any follow-ups from #5055/#5083.
 
 ### Prabhat1308
 1. **Closing Rate Storage (led by jirijakes)** — revive #4923 (`exchange_rates` table + outbox delivery), extend with closing rate capture and `(pair, date, rate_type)` lookup. Prabhat built `CalculationAmount<C>` (#4421) which underpins the rate types; jirijakes drives the API surface and integration requirements.
