@@ -192,7 +192,8 @@ Infrastructure merged to main that both chains build upon.
 | Settlement reval-unwind | ⬜ Not started | — |
 | Reconciliation job | ⬜ Not started | — |
 
-**Blocked by:** Dual-Currency Entries (book values in ledger) + Trading Account (accumulator) + Closing Rate Storage (cross-cutting).
+**Template/entity layer buildable now:** Revaluation template, cumulative_reval tracker, delta method worker, and job chain can all be designed and tested with placeholder rate values — same principle as Gap 2/3 templates. Closing Rate Storage is a **runtime data dependency** (the worker calls `get_closing_rate(pair, date)` across a service boundary), not a design dependency.
+**Runtime blocked by:** Dual-Currency Entries (book values in ledger) + Trading Account (accumulator) + Closing Rate Storage (provides real closing rates at runtime).
 **Open question:** OQ-1 — orphaned USD on Omnibus after partial settlement (see SPEC.md).
 **Reference:** SPEC Component 5 has full job code; walkthrough has expected values for all 9 reval steps.
 
@@ -216,8 +217,8 @@ A minimal subset of SPEC Component 1 — just enough to persist and look up clos
 | Rate lookup by `(pair, date, rate_type)` | 🔶 Explored (#4923, stale) | Prabhat1308 |
 | Fiat rate source adapter (EUR/USD, GBP/USD) | ⬜ Not started | — |
 
-**Needed by:** Fiat FX Revaluation (closing rates for delta method), BTC revaluation stages (BTC closing rate — currently uses `PriceOfOneBTC` which works for now but has no persistence).
-**Note:** BTC revaluation can start with the existing price feed. Fiat revaluation cannot — there is no fiat rate source today.
+**Needed by (at runtime):** Fiat FX Revaluation (closing rates for delta method), BTC revaluation stages (BTC closing rate — currently uses `PriceOfOneBTC` which works for now but has no persistence).
+**Note:** Revaluation scaffolding (template, tracker, job chain, worker) can proceed in parallel with placeholder rate values — rate storage is a runtime data dependency, not a design dependency. However, fiat revaluation cannot run in production without a fiat rate source (none exists today).
 
 ---
 
@@ -327,10 +328,10 @@ The three largest 0%-complete stages have **no owner and no started code**:
 jirijakes is the primary reviewer for the FX chain. 5 written-but-unreviewed items in Trading Account (#4958, #4970) are waiting on him. With BTC revaluation deprioritized, jirijakes is redirected to Closing Rate Storage (with Prabhat1308). Fiat Revaluation is split: vindard (core job chain, tracker, worker) + nsandomeno (withdrawal/settlement reval-unwind). Prabhat1308 is available as a second reviewer for #4958/#4970.
 
 ### Highest-leverage actions (ordered)
-1. **Review and merge #4958 → #4970** — Trading Account 55% → ~90%. Unblocks fiat revaluation. #4958 is open and ready for review. (jirijakes)
-2. **Closing Rate Storage (jirijakes leading Prabhat1308)** — hard prerequisite for both revaluation chains. Revive #4923, add closing rate capture (EOD snapshot), rate lookup by `(pair, date, rate_type)`, fiat rate source adapter. Without rate storage, revaluation code has nothing to read from.
-3. **Review #5078 (withdrawal templates)** — Dual-Currency Entries 85% → ~100%. nsandomeno already writing; needs review.
-4. **Fiat Revaluation (vindard + nsandomeno)** — vindard owns core job chain, cumulative_reval tracker, delta method worker (extends his core/fx work). nsandomeno owns withdrawal/settlement reval-unwind (extends his withdrawal template work).
+1. **Review and merge #4958 → #4970** — Trading Account 55% → ~90%. #4958 is open and ready for review. (jirijakes)
+2. **Fiat Revaluation scaffolding (vindard + nsandomeno) ∥ Closing Rate Storage (jirijakes + Prabhat1308)** — these run in parallel. Revaluation template, cumulative_reval tracker, job chain, and delta method worker can all be built with placeholder rate values (same layered approach as Gap 2/3). Rate storage provides real closing rates at runtime but is not a design dependency.
+3. **Review #5078 (withdrawal templates)** — Dual-Currency Entries progress. nsandomeno already writing; needs review.
+4. **Credit module multicurrency migration (thevaibhav-dixit)** — largest remaining module migration, prerequisite for dual-currency entries to work end-to-end in credit flows.
 
 ---
 
@@ -345,7 +346,7 @@ jirijakes is the primary reviewer for the FX chain. 5 written-but-unreviewed ite
 4. **Get #5080 reviewed (ConversionRate rename)** — Gap 4 step 1, small mechanical rename in `core/fx`.
 5. **Un-draft #4970 once #4958 merges** — settlement book-value leg + rate metadata.
 6. **Continue Rate Type Migration (Gap 4)** — after #5080 merges, migrate `ReferenceRate`/`AnyReferenceRate` from `core/price` → `core/fx`.
-7. **Fiat Revaluation ownership** — once #4970 merges and Gap 4 migration lands: cumulative_reval tracker (event-sourced entity), delta method worker, revaluation template (6100/6200 accounts), revaluation job chain (handler → collector → worker). Natural extension of core/fx work. SPEC Component 5 has full pseudocode.
+7. **Fiat Revaluation ownership** — can start in parallel with rate storage: cumulative_reval tracker (event-sourced entity), delta method worker, revaluation template (6100/6200 accounts), revaluation job chain (handler → collector → worker). All buildable with placeholder rate values. Natural extension of core/fx work. SPEC Component 5 has full pseudocode.
 
 ### nsandomeno
 1. **Finish #5078 (withdrawal dual-currency templates)** — 13 commits, 5 templates + use-cases. Get review.
@@ -366,7 +367,7 @@ jirijakes is the primary reviewer for the FX chain. 5 written-but-unreviewed ite
 1. ~~**Merge #4959 (collateral lot tracking)**~~ — ✅ merged 2026-04-14.
 2. ~~**Review #5048 (AnyCurrency refactor)**~~ — ✅ approved 2026-04-14.
 3. **Review #4958 and #4970** — next in the FX chain. #4958 is open and ready for review. Conversion orchestration and settlement book-value leg.
-4. **Lead Closing Rate Storage (with Prabhat1308)** — hard prerequisite for fiat revaluation. Revive #4923, add EOD closing rate snapshot triggered by `CoreTimeEvent::EndOfDay`, rate lookup by `(pair, date, rate_type)`. Guide fiat rate source adapter work.
+4. **Lead Closing Rate Storage (with Prabhat1308)** — runtime dependency for fiat revaluation (provides real closing rates; revaluation scaffolding proceeds in parallel with placeholder values). Revive #4923, add EOD closing rate snapshot triggered by `CoreTimeEvent::EndOfDay`, rate lookup by `(pair, date, rate_type)`. Guide fiat rate source adapter work.
 5. ~~**Continue #4821 (BTC collateral revaluation)**~~ — deprioritized until fiat revaluation is complete and BTC holdings strategy has more clarity.
 
 ---
