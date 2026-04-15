@@ -1,7 +1,7 @@
 # FX Infrastructure: Progress Overview
 
 *Derived from SPEC.md and IMPLEMENTATION_STATUS.md. Not a source of truth — see those documents for details.*
-*Last updated: 2026-04-14T18:59Z*
+*Last updated: 2026-04-15T04:35Z*
 
 ## Naming Map
 
@@ -25,15 +25,15 @@ This document uses descriptive names. The SPEC and IMPLEMENTATION_STATUS use leg
 | Stage | SPEC Components | Weight | Progress | Weighted |
 |-------|----------------|--------|----------|----------|
 | Shared Foundation | §2 current state | ~10% | 100% | 10% |
-| Dual-Currency Entries | C3 (partial) | ~10% | ~80% | 8% |
+| Dual-Currency Entries | C3 (partial) | ~10% | ~85% | 8.5% |
 | Trading Account + G/L | C4 | ~20% | ~55% | 11% |
 | Fiat Revaluation | C5 fiat, C7 fiat jobs | ~20% | 0% | 0% |
 | Collateral Revaluation | C6 | ~12% | ~30% | 3.5% |
 | BTC Fair Value Reval | C5 BTC, C7 BTC jobs | ~10% | 0% | 0% |
 | Closing Rate Storage | C1 minimal | ~6% | ~10% | 0.5% |
-| Rate Type Migration | C3/C4 architectural | ~5% | ~20% | 1% |
+| Rate Type Migration | C3/C4 architectural | ~5% | ~30% | 1.5% |
 | Job Orchestration | C7 (shared infra) | ~7% | ~5% | 0.5% |
-| **Total (non-deferred)** | | **100%** | | **~35%** |
+| **Total (non-deferred)** | | **100%** | | **~36%** |
 
 *Deferred items (full C1/C2, segregation, on-chain reconciliation, regulatory) are excluded — they are trigger-gated and not sequenced. Against the full SPEC including deferred work, overall completion is closer to ~21–25%. The non-deferred figure is used here because deferred items each have specific trigger conditions and no one should be sequencing them yet.*
 
@@ -61,7 +61,7 @@ FIAT FX CHAIN                              BTC CHAIN
 ┌───────────────────────┐                  ┌───────────────────────┐
 │  Dual-Currency        │                  │  Collateral           │
 │  Entries              │                  │  Revaluation          │
-│  █████████████████░░░ │ ~85%             │  ██████░░░░░░░░░░░░░░ │ ~30%
+│  ██████████████████░░ │ ~85%             │  ██████░░░░░░░░░░░░░░ │ ~30%
 └───────────┬───────────┘                  └───────────┬───────────┘
             │                                          │
             │ revaluation needs                        │ fair-value collector
@@ -90,8 +90,8 @@ CROSS-CUTTING (needed by specific stages)
 ┌───────────────────────┐   ┌─────────────────────────┐
 │  Closing Rate         │   │  Rate Type Migration    │
 │  Storage              │   │  (core/price → core/fx) │
-│  ██░░░░░░░░░░░░░░░░░░ │   │  ████░░░░░░░░░░░░░░░░   │
-│  ~10%                 │   │  ~20%                   │
+│  ██░░░░░░░░░░░░░░░░░░ │   │  ██████░░░░░░░░░░░░░░   │
+│  ~10%                 │   │  ~30%                   │
 └───────────────────────┘   └─────────────────────────┘
  Minimal C1 subset for       Gap 4 — needed for Trading
  fiat + BTC revaluation      Account (Gap 5, Gap 6)
@@ -126,15 +126,15 @@ Infrastructure merged to main that both chains build upon.
 | `ExchangeRate<B,Q>` generics + `ReferenceRate` + `AnyReferenceRate` | #4817 | bodymindarts |
 | `PriceClient` trait — per-provider price fetch with aggregation | #4817 | bodymindarts |
 
-**Fiat FX chain also has** chain-specific foundation work already merged: currency-aware deposit infrastructure (#4561, #4591, #4616, #4671), rate metadata on deposits (#4559), `core/fx` crate scaffolding (#4430), and deposit public event multicurrency migration (#5055, in progress). These are reflected in the Fiat FX stages above rather than here because the BTC chain does not depend on them.
+**Fiat FX chain also has** chain-specific foundation work already merged: currency-aware deposit infrastructure (#4561, #4591, #4616, #4671), rate metadata on deposits (#4559), `core/fx` crate scaffolding (#4430), and deposit public event multicurrency migration (#5055, approved — pending un-draft). These are reflected in the Fiat FX stages above rather than here because the BTC chain does not depend on them.
 
 ---
 
 ## Fiat FX Chain
 
-### Dual-Currency Entries                                              ~80%
+### Dual-Currency Entries                                              ~85%
 ```
-████████████████████████░░░░░░
+█████████████████████████░░░░░
 ```
 
 | Item | Status | Owner |
@@ -144,9 +144,9 @@ Infrastructure merged to main that both chains build upon.
 | Rate metadata on `RECORD_DEPOSIT` | ✅ Merged | nsandomeno |
 | Spot vs historical rate separation | ✅ Merged (#4960) | nsandomeno |
 | Dual-currency `RECORD_DEPOSIT` (4-entry variant) | ✅ Merged (#4960) | nsandomeno |
-| Dual-currency `RECORD_WITHDRAWAL` | ⬜ Not started | — |
+| Dual-currency `RECORD_WITHDRAWAL` (5 templates + use-cases) | 🔵 Written, no review (#5078) | nsandomeno |
 
-**Next action:** Build withdrawal dual-currency variant.
+**Next action:** Review #5078 (withdrawal templates). #5055 (deposit public events → AnyMinorUnits) approved by nsandomeno, jirijakes commented.
 
 ---
 
@@ -167,9 +167,9 @@ Infrastructure merged to main that both chains build upon.
 | Rate metadata on all 3 FX templates | 🔵 Written, no review (#4970) | vindard |
 | Integration tests (conversion + settlement) | 🔵 Written, no review (#4970) | vindard |
 
-**PR chain:** ~~#4957~~ ✅ → ~~#5048~~ ✅ → #5072 (currency registry macro, draft) → #4958 (draft) → #4970 (draft). Foundation chain fully merged. #5072 is a new intermediate cleanup PR.
-**Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6).
-**Next action:** vindard to un-draft #5072, then #4958/#4970 for review. jirijakes to review #4958 and #4970.
+**PR chain:** ~~#4957~~ ✅ → ~~#5048~~ ✅ → ~~#5072~~ ❌ (closed) → #4958 (**open, ready for review**) → #4970 (draft). Foundation chain fully merged; #5072 dropped, chain simplified.
+**Also needs:** Rate Type Migration (cross-cutting) for full rate service wiring (Gaps 5, 6). #5080 starts the rename.
+**Next action:** jirijakes to review #4958, then #4970.
 
 ---
 
@@ -217,9 +217,9 @@ A minimal subset of SPEC Component 1 — just enough to persist and look up clos
 
 ---
 
-### Rate Type Migration (`core/price` → `core/fx`)                    ~20%
+### Rate Type Migration (`core/price` → `core/fx`)                    ~30%
 ```
-██████░░░░░░░░░░░░░░░░░░░░░░░░
+█████████░░░░░░░░░░░░░░░░░░░░░
 ```
 
 SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadata types currently live in `core/price` and need to migrate. See IMPLEMENTATION_STATUS Gap 4.
@@ -227,7 +227,7 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | Item | Status | Owner |
 |------|--------|-------|
 | Prerequisite type refactoring (`ExchangeRate<B,Q>`, generics) | ✅ Merged (#4817) | bodymindarts |
-| Rename `ExchangeRate` → `ConversionRate` in `core/fx` (disambiguate) | ⬜ Not started | — |
+| Rename `ExchangeRate` → `ConversionRate` in `core/fx` (disambiguate) | 🔵 Written, no review (#5080) | vindard |
 | Migrate `ReferenceRate`, `AnyReferenceRate`, `RateType` to `core/fx` | ⬜ Not started | — |
 | Wire `core/price` as a rate source adapter behind `core/fx` | ⬜ Not started | — |
 
@@ -290,6 +290,7 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 | PR | What | Status | Impact |
 |----|------|--------|--------|
 | #4978 | Bitfinex price poller fix (11th field) | ✅ Merged 2026-04-10 | BTC/USD rates restored on staging |
+| #5077 | RBAC snake_case permission set names (collateral) | ✅ Merged 2026-04-15 | Collateral module authz fix |
 | #5063 | Bump cala 0.15.2, job 0.6.18, obix 0.2.21 | ✅ Merged 2026-04-14 | Dependency updates |
 | #5064 | Liquidation calculator robustness | ✅ Merged 2026-04-14 | Clamp-based calc, premium sign fix |
 | #5060 | Bank price snapshots to DW | 🔵 Open (sandipndev) | Historical price data in DW |
@@ -301,11 +302,12 @@ SPEC designates `core/fx` as the domain owner of FX infrastructure. Rate metadat
 ## Critical Path (Fiat FX)
 
 ```
- #4960 ✅ ──► #4957 ✅ ──► #5048 ✅ ──► #5072 draft ──► #4958/#4970 review ──► Merge ──► Reval ──► Done
- (merged)     (merged)     (merged)     (new cleanup)   (no review yet)        (~2 PRs)   (all new)
+ #4960 ✅ ──► #4957 ✅ ──► #5048 ✅ ──► #4958 open ──► #4970 draft ──► Merge ──► Reval ──► Done
+ (merged)     (merged)     (merged)     (ready for      (no review)    (~2 PRs)   (all new)
+                                         review)
 ```
 
-Major milestone: #4957 and #5048 both merged today. The foundation chain is fully on main. Bottleneck is now #5072 (small cleanup) → #4958/#4970 review by jirijakes.
+#5072 closed, chain simplified. #4958 un-drafted and ready for review. Bottleneck is now jirijakes reviewing #4958 → #4970. In parallel: #5078 (withdrawal templates, nsandomeno) and #5080 (ConversionRate rename, vindard).
 
 ---
 
@@ -321,32 +323,32 @@ The three largest 0%-complete stages have **no owner and no started code**:
 jirijakes is the primary reviewer for the FX chain and also the sole developer on the BTC chain. 5 written-but-unreviewed items in Trading Account (#4958, #4970) are waiting on him. Prabhat1308 is available as a second reviewer.
 
 ### Highest-leverage actions (ordered)
-1. **Merge #5072 → #4958 → #4970** — Trading Account 55% → ~90%. Unblocks fiat revaluation.
-2. **Build dual-currency RECORD_WITHDRAWAL** — Dual-Currency Entries 80% → 100%. Removes last Gap 2 blocker.
-3. **Revive #4923 (rate history)** — Closing Rate Storage is a prerequisite for both revaluation chains. Stale 1 week.
+1. **Review and merge #4958 → #4970** — Trading Account 55% → ~90%. Unblocks fiat revaluation. #4958 is open and ready for review.
+2. **Review #5078 (withdrawal templates)** — Dual-Currency Entries 85% → ~100%. nsandomeno already writing; needs review.
+3. **Revive #4923 (rate history)** — Closing Rate Storage is a prerequisite for both revaluation chains. Stale since 2026-04-07.
 4. **Assign fiat revaluation owner** — the largest remaining body of work with no one driving it.
 
 ---
 
 ## Next Actions by Person
 
-*Updated 2026-04-14.*
+*Updated 2026-04-15.*
 
 ### vindard
 1. ~~**Un-draft and merge #4978**~~ — ✅ merged 2026-04-10.
-2. ~~**Respond to jirijakes' latest feedback on #4957**~~ — ✅ responded 2026-04-13, opened #5048.
-3. ~~**Review #4959 (collateral lot tracking)**~~ — ✅ approved 2026-04-13, merged 2026-04-14.
-4. ~~**Un-draft #4957 and #5048 for merge**~~ — ✅ both merged 2026-04-14.
-5. **Un-draft #5072 (currency registry macro)** — small cleanup, then un-draft #4958/#4970 for review.
-6. **Rate Type Migration (Gap 4)** — now unblocked since #4957 chain is on main. `ExchangeRate` → `ConversionRate` rename target exists on main.
+2. ~~**Un-draft #4957 and #5048 for merge**~~ — ✅ both merged 2026-04-14.
+3. ~~**Un-draft #4958**~~ — ✅ un-drafted 2026-04-14, ready for review.
+4. **Get #5080 reviewed (ConversionRate rename)** — Gap 4 step 1, small mechanical rename in `core/fx`.
+5. **Un-draft #4970 once #4958 merges** — settlement book-value leg + rate metadata.
+6. **Continue Rate Type Migration (Gap 4)** — after #5080 merges, migrate `ReferenceRate`/`AnyReferenceRate` from `core/price` → `core/fx`.
 
 ### nsandomeno
-1. **Dual-currency `RECORD_WITHDRAWAL`** — deposit side (#4960) is merged; withdrawal is the natural follow-up to complete Gap 2.
+1. **Finish #5078 (withdrawal dual-currency templates)** — 13 commits, 5 templates + use-cases. Get review.
+2. ~~**Review #5055**~~ — ✅ approved 2026-04-15.
 
 ### thevaibhav-dixit
-1. **Finish #5055 (deposit public events → AnyMinorUnits)** — address nsandomeno's review feedback on Sumsub `currencyType` needing dynamic resolution from `CurrencyCode`.
-2. **Dual-currency `RECORD_WITHDRAWAL`** — could pair with nsandomeno on this; #5055 advances the deposit module's multicurrency migration which is prerequisite context.
-3. **Continue deposit multicurrency migration** — #5055 is the first step; follow-ups likely needed for full `PublicDeposit`/`PublicWithdrawal` multicurrency support.
+1. **Un-draft #5055 (deposit public events → AnyMinorUnits)** — approved by nsandomeno. jirijakes noted `is_fiat()` exists on `Currency` from #5048, which may resolve the Sumsub concern.
+2. **Continue deposit multicurrency migration** — follow-ups likely needed for full `PublicDeposit`/`PublicWithdrawal` multicurrency support.
 
 ### Prabhat1308
 1. **Revive #4923 (Rate History)** — stale since 2026-04-07. `AggregatePriceHandler` delivering to `exchange_rates` table + outbox. Relevant to Gap 1 (historical rate lookup). Requested reviewers: nsandomeno, vindard.
@@ -355,7 +357,7 @@ jirijakes is the primary reviewer for the FX chain and also the sole developer o
 ### jirijakes
 1. ~~**Merge #4959 (collateral lot tracking)**~~ — ✅ merged 2026-04-14.
 2. ~~**Review #5048 (AnyCurrency refactor)**~~ — ✅ approved 2026-04-14.
-3. **Review #4958 and #4970** — next in the FX chain. Foundation is merged; these are conversion orchestration and settlement book-value leg.
+3. **Review #4958 and #4970** — next in the FX chain. #4958 is open and ready for review. Conversion orchestration and settlement book-value leg.
 4. **Continue #4821 (BTC collateral revaluation)** — unblocked by #4959 merge. No updates since 2026-04-07.
 
 ---

@@ -1,7 +1,7 @@
 # FX Infrastructure: Implementation Status & Gaps
 
 *Living document — updated as gaps are resolved and new ones identified.*
-*Originally consolidated 2026-03-30. Last updated 2026-04-14T18:59Z.*
+*Originally consolidated 2026-03-30. Last updated 2026-04-15T04:35Z.*
 *Supersedes `group-b-waiting-on-group-a.md` in this directory and the date-stamped gap/dependency docs in `ephemeral/2026-03-24/`, `2026-03-25/`, `2026-03-29/`.*
 
 ### Architectural principles for this document
@@ -66,12 +66,12 @@ These PRs have merged and form the foundation for the remaining work:
 
 | PR / Branch | Author | Status | Relevance |
 |-------------|--------|--------|-----------|
-| #5072 `refactor/money-currency-registry-macro` | vindard | Draft (2026-04-14) | **Single-source currency registry macro.** `define_currencies!` macro replaces scattered `CurrencyCode` constants, `define_static_currency!` calls, and manual match arms. Adding a currency becomes one line. Removes dead `UnsupportedCurrency` variant. Touches `lib/money`. **Chain: ~~#5048~~ → #5072 → #4958 → #4970.** |
-| #4958 `refactor/fx-conversion-flow` | vindard | Draft, rebased (2026-04-14) | **Phase 3 orchestration:** CALA templates (`FiatFxConversionViaTrading`, `RealizedFxGainLoss`, `FxSettlement`), `CoreFx::convert_fiat_fx()` and `CoreFx::settle_fx()` orchestration. Bases on #5072 (parent chain merged). 6 commits. No human review yet. |
-| #4970 `refactor/fx-settlement-book-value` | vindard | Draft, rebased (2026-04-14) | **Phase 3 completion:** Settlement book-value leg (FX_SETTLEMENT expanded 2→4 entries), `OutflowResult` struct from position outflow, `AnyReferenceRate` metadata on all 3 FX templates. Adds `core-price` dep to `core-fx`. **Integration tests added** for FX conversion and settlement. Chain: ~~#4957→#5048~~→#5072→#4958→**#4970**. Addresses Gap 5 and part of Gap 3. 5 commits. No human review yet. |
-| #5055 `refactor/deposit-anyminorunits` | thevaibhav-dixit | Draft (2026-04-14) | **Deposit public events use `AnyMinorUnits` instead of `UsdCents`.** `PublicDeposit`/`PublicWithdrawal` expose `amount` as `AnyMinorUnits`, `PublicDepositAccount` gains `currency: CurrencyCode`. Sumsub export configs carry `AnyMinorUnits` + explicit `CurrencyCode`. **nsandomeno reviewed (2026-04-14):** raised Sumsub API concern — `currencyType` can't be hardcoded "fiat" when `CurrencyCode` includes BTC; needs dynamic type resolution. Touches `core/deposit`, `lib/money`, `deposit-sync`. |
+| #5080 `refactor/fx-conversion-rate-rename` | vindard | Draft (2026-04-15) | **Gap 4 step 1: `ExchangeRate` → `ConversionRate` rename in core-fx.** Disambiguates the FX computation type from `core/price::ExchangeRate<B,Q>`. Touches only `core/fx/src/error.rs` and `core/fx/src/primitives.rs`. Clean mechanical rename. |
+| #5078 `refactor/withdrawal-non-functional` | nsandomeno | Draft (2026-04-15) | **Gap 2 withdrawal templates.** 5 non-functional-currency withdrawal templates (initiate, confirm, cancel, deny, revert) + use-case wiring + `find_tx_functional_amount` helper for reading `CurrencyTranslation` metadata from deposit transactions. 13 commits. Touches `core/deposit/src/ledger/`, `core/deposit/src/lib.rs`, `core/deposit/src/processes/`. |
+| #4958 `refactor/fx-conversion-flow` | vindard | Open (un-drafted 2026-04-14) | **Phase 3 orchestration:** CALA templates (`FiatFxConversionViaTrading`, `RealizedFxGainLoss`, `FxSettlement`), `CoreFx::convert_fiat_fx()` and `CoreFx::settle_fx()` orchestration. 6 commits. No human review yet. Ready for review. |
+| #4970 `refactor/fx-settlement-book-value` | vindard | Draft (2026-04-14) | **Phase 3 completion:** Settlement book-value leg (FX_SETTLEMENT expanded 2→4 entries), `OutflowResult` struct from position outflow, `AnyReferenceRate` metadata on all 3 FX templates. Adds `core-price` dep to `core-fx`. **Integration tests added** for FX conversion and settlement. Chain: #4958→**#4970**. Addresses Gap 5 and part of Gap 3. 5 commits. No human review yet. |
+| #5055 `refactor/deposit-anyminorunits` | thevaibhav-dixit | Draft, approved (2026-04-15) | **Deposit public events use `AnyMinorUnits` instead of `UsdCents`.** `PublicDeposit`/`PublicWithdrawal` expose `amount` as `AnyMinorUnits`, `PublicDepositAccount` gains `currency: CurrencyCode`. **nsandomeno approved (2026-04-15T02:19Z).** jirijakes commented (2026-04-15T02:54Z) noting `is_fiat()` already exists on `Currency` trait from #5048. Still draft. Touches `core/deposit`, `lib/money`, `deposit-sync`. |
 | #4923 `feat/exchange-rate-history` | Prabhat1308 | Draft | **Rate History exploration.** `AggregatePriceHandler` delivers to `exchange_rates` table and ephemeral outbox. Relevant to Gap 1 (historical rate lookup). Reviewers requested: nsandomeno, vindard. Stale since 2026-04-07. |
-| #4697 `chore--use-calculation-amount` | nsandomeno | Draft | **Largely superseded by #4817.** Stalled since 2026-04-01. May still have residual naming/API changes not yet in #4817. |
 | #4686 `refactor--deposit-multicurrency-w-export-sumsub-deposit` | nsandomeno | Draft | Follow-up to #4671: multi-currency support in sumsub deposit export. Stalled since 2026-03-30. |
 | #4700 `feat/lana-admin-price-provider-control` | sebastienverreault | Draft | Admin UI for price provider configuration. Last updated 2026-04-08. Tangential to FX infrastructure. |
 | #4757 `task/lana-ec-impl-019d4a85` | bodymindarts | Draft | **Eventually consistent account sets with EOD recalculation.** Eliminates advisory-lock contention on account set balance rows. Infrastructure improvement tangential to FX but relevant to multi-currency throughput. 24 commits (updated 2026-04-13). nicolasburtey asked about manual backdated transactions. |
@@ -130,12 +130,13 @@ Without these, `balance_functional` doesn't exist in the ledger. Revaluation nee
 
 **Affected templates:** `RECORD_DEPOSIT` (has `ReferenceRate` metadata from #4559, needs USD entry legs), `RECORD_WITHDRAWAL`, `FIAT_FX_CONVERSION_VIA_TRADING` (unique: USD leg source is proportional book cost, not spot rate).
 
-**Progress since last update (2026-04-14T18:59Z):**
-- **#5055 (draft, thevaibhav-dixit, 2026-04-14)** — nsandomeno reviewed: raised Sumsub API concern that `currencyType` can't be hardcoded "fiat" when `CurrencyCode` includes BTC; needs dynamic type resolution via `CurrencyCode`. thevaibhav-dixit responded. Not directly a Gap 2 template change but advances multi-currency deposit infrastructure.
+**Progress since last update (2026-04-15T04:35Z):**
+- **#5078 (draft, nsandomeno, 2026-04-15)** — **Withdrawal dual-currency templates started.** 5 non-functional-currency withdrawal templates (initiate, confirm, cancel, deny, revert) with use-case wiring in `CoreDeposit` and `DepositLedger`. Includes `find_tx_functional_amount` helper that reads `CurrencyTranslation` metadata from deposit transactions to retrieve functional-currency amounts. 13 commits, no reviews yet.
+- **#5055 (draft, thevaibhav-dixit)** — nsandomeno approved (2026-04-15T02:19Z). jirijakes commented (2026-04-15T02:54Z) noting `is_fiat()` already exists on `Currency` trait from #5048, which addresses nsandomeno's earlier Sumsub `currencyType` concern.
 
 **Prior progress (still current):**
 - **#4960 (merged 2026-04-10)** resolves this gap for deposits: `AnyCurrencyRecordDeposit` template variant with dual-currency entry legs.
-- **Remaining:** `RECORD_WITHDRAWAL` and `FIAT_FX_CONVERSION_VIA_TRADING` still need dual-currency legs.
+- **Remaining:** ~~`RECORD_WITHDRAWAL`~~ **IN PROGRESS (#5078)** and `FIAT_FX_CONVERSION_VIA_TRADING` still need dual-currency legs.
 
 ---
 
@@ -158,10 +159,10 @@ The book value (`55.40`) is computed by the application service as `(converted_e
 
 This is the core of shortcoming #1 from the branch review: the accumulator currently records the conversion-rate amount (57.50) as functional cost instead of the book-value amount (55.00). The 2.50 difference is realized G/L that should not be in the cost basis.
 
-**Progress since last update (2026-04-14T18:59Z):**
-- **#4957 merged (2026-04-14T15:11Z)** and **#5048 merged (2026-04-14T16:22Z)** — the foundation types and AnyCurrency integration are now on main. This unblocks review of downstream #4958 and #4970.
-- **#5072 (draft, vindard, 2026-04-14)** — new intermediate PR: single-source currency registry macro in `lib/money`. Now part of the chain before #4958.
-- **#4958 and #4970** rebased on merged chain. Still draft, no human reviews yet.
+**Progress since last update (2026-04-15T04:35Z):**
+- **#5072 closed (2026-04-14T20:55Z)** — currency registry macro PR closed without merge. Chain simplified.
+- **#4958 un-drafted (2026-04-14)** — conversion orchestration now open and ready for review. No reviews yet.
+- **#4970** remains draft, no reviews yet. Chain is now: **#4958 → #4970** (foundation chain fully merged to main).
 
 **Prior progress (still current):**
 - **#4970 (draft, vindard)** adds the settlement book-value leg: FX_SETTLEMENT expanded from 2→4 entries, `OutflowResult` struct, integration tests.
@@ -191,7 +192,12 @@ PR #4559 placed the metadata types in `core/price`. They need to move to `core/f
 
 **Name collision:** `core/fx` already has its own `ExchangeRate` — a computation primitive (rate + precision, `convert()`, `inverse()`). This is a different type serving a different purpose. Rename it to `ConversionRate` to disambiguate.
 
-**Progress since last update:** #4817 (merged 2026-04-03) landed the prerequisite refactoring that was previously in-progress via #4697: generic `ExchangeRate<Base, Quote>`, `ReferenceRate`, `AnyReferenceRate`, `Rate` enum, `CalculationAmount` arithmetic — all in `core/price`. The review feedback from jirijakes and Prabhat1308 on rounding and naming was incorporated. This makes the eventual migration to `core/fx` cleaner since the types now have well-defined generic signatures. #4697 is largely superseded.
+**Progress since last update (2026-04-15T04:35Z):**
+- **#5080 (draft, vindard, 2026-04-15)** — **Step 1 started:** `ExchangeRate` → `ConversionRate` rename in `core/fx`. Clean mechanical rename touching only `core/fx/src/error.rs` and `core/fx/src/primitives.rs`. PR description documents the two types' distinct purposes and confirms no conversion between them exists.
+- **#4697 closed (2026-04-14T18:43Z)** — confirmed superseded by #4817.
+
+**Prior progress (still current):**
+- #4817 (merged 2026-04-03) landed the prerequisite refactoring: generic `ExchangeRate<Base, Quote>`, `ReferenceRate`, `AnyReferenceRate`, `Rate` enum, `CalculationAmount` arithmetic — all in `core/price`.
 
 **Dependency graph change:**
 ```
@@ -211,8 +217,8 @@ After:   core/price ← core/fx ← core/deposit, core/credit
 
 `post_fx_conversion_in_op` has no `reference_rate` in its metadata JSON. Should follow the pattern #4559 established on `RECORD_DEPOSIT`. Also needed on `FX_SETTLEMENT` and `REALIZED_FX_GAIN_LOSS` templates.
 
-**Progress since last update (2026-04-14T18:59Z):**
-- **#4957 and #5048 merged (2026-04-14)** — foundation chain now on main, unblocking review of #4970 which addresses Gap 5.
+**Progress since last update (2026-04-15T04:35Z):**
+- No new changes to Gap 5 since last update. #4970 (which addresses this gap) remains draft, no reviews yet. #4958 (parent) un-drafted and ready for review.
 
 **Prior progress (still current):**
 - **#4970 (draft, vindard)** adds `AnyReferenceRate` to all 3 FX template params. **This gap is addressed at the template layer pending merge of #4970.** No human reviews yet.
@@ -285,20 +291,25 @@ Architectural:
 ```
 
 **Parallelizable now (template layer):**
-- Gap 2 — **PARTIALLY RESOLVED** via #4960 (merged 2026-04-10): deposit dual-currency legs done. Withdrawal still needed.
+- Gap 2 — **PARTIALLY RESOLVED** via #4960 (deposits); withdrawal templates now in progress (#5078, nsandomeno)
 - Gap 3 — conversion book-value leg in #4958; settlement book-value leg in #4970
 - Gap 5 — **addressed** in #4970: rate metadata on all 3 FX templates (pending merge)
 
 **Parallelizable now (other layers):**
 - Gap 1 (application-layer — #4817 landed typed rate infrastructure; #4960 merged spot/historical separation; #4923 exploring rate history (stale); fiat rate source adapter still needed)
-- Gap 4 (architectural, no runtime dependency — prerequisite cleanup landed in #4817, migration itself remains)
+- Gap 4 (architectural — rename step started in #5080; migration itself remains)
 
 **PR chain in review:**
 - ~~#4430 (core/fx scaffolding)~~ **MERGED 2026-04-09** — now on main
 - ~~#4960 (deposit dual-currency template)~~ **MERGED 2026-04-10** — now on main
 - ~~#4957 (foundation types)~~ **MERGED 2026-04-14** — now on main
 - ~~#5048 (AnyCurrency refactor)~~ **MERGED 2026-04-14** — now on main
-- #5072 (currency registry macro, draft) ← #4958 (orchestration, draft) ← #4970 (settlement book-value + rate metadata + integration tests, draft) — all draft, no human reviews yet. Foundation chain is fully merged; remaining PRs ready for review.
+- ~~#5072 (currency registry macro)~~ **CLOSED 2026-04-14** — not merged
+- #4958 (orchestration, **open — ready for review**) ← #4970 (settlement book-value + rate metadata + integration tests, draft). Foundation chain fully merged.
+
+**Gap 2 chain:** #5078 (withdrawal templates, draft, nsandomeno) — independent of FX chain
+
+**Gap 4 chain:** #5080 (ConversionRate rename, draft, vindard) — independent
 
 **Infrastructure PRs:**
 - ~~#4978 (bfx-client fix)~~ **MERGED 2026-04-10** — Bitfinex price poller fixed, BTC/USD rates restored on staging
@@ -357,7 +368,8 @@ inflow for EUR→USD at the position level.
 
 **Gap 2** — **PARTIALLY RESOLVED** (#4960 merged 2026-04-10):
 - ✅ `AnyCurrencyRecordDeposit` template with dual-currency entry legs — merged
-- Remaining: RECORD_WITHDRAWAL, FIAT_FX_CONVERSION_VIA_TRADING still need dual-currency legs
+- 🔵 Non-functional-currency withdrawal templates (initiate, confirm, cancel, deny, revert) — written in #5078 (nsandomeno), no review yet
+- Remaining: FIAT_FX_CONVERSION_VIA_TRADING still needs dual-currency legs
 
 **Gap 3** — **PARTIALLY ADDRESSED** via #4958 + #4970:
 - Conversion book-value leg (entries ㉓-㉔, ㉗-㉘) in #4958
@@ -392,7 +404,7 @@ inflow for EUR→USD at the position level.
 
 **Gap 4** (prerequisite cleanup landed in #4817):
 - ~~Refactor ExchangeRate/ReferenceRate generics and CalculationAmount integration~~ — **done** via #4817
-- Rename `ExchangeRate` → `ConversionRate` in core/fx to disambiguate
+- 🔵 Rename `ExchangeRate` → `ConversionRate` in core/fx to disambiguate — **written in #5080** (vindard), no review yet
 - Migrate rate metadata types from core/price → core/fx
 - Wire core/price as a rate source adapter
 - Enables: Gap 5 service layer (constructing metadata structs), Gap 6
@@ -426,6 +438,8 @@ multi-line translation scenarios arise later, a rounding account can be reintrod
 | #4788 | refactor(price): per-provider fetch jobs with aggregation handler | Merged then immediately reverted; re-landed as #4817 |
 | #4869 | refactor: breakout rate lookup use cases | Explored separating historical vs spot rate lookup using `ADD_COLLATERAL` as iteration surface; closed 2026-04-07 without merge |
 | #4713 | feat(state-consumer): add temporal state consumer CLI for event replay | Closed 2026-04-08 without merge (sebastienverreault) |
+| #5072 | refactor(money): single-source currency registry macro | Closed 2026-04-14 without merge (vindard). `define_currencies!` macro — approach dropped; chain simplified to #4958→#4970 directly. |
+| #4697 | refactor: `ExchangeRate` and `ReferenceRate` | Closed 2026-04-14 without merge (nsandomeno). Confirmed superseded by #4817. |
 | #5041 | chore(deps): bump cala-ledger to 0.15.1 | Closed 2026-04-13 without merge (Lakshyyaa). Draft, 1 commit. |
 
 ---
